@@ -1,0 +1,24 @@
+# Build output
+bin/
+
+# Test & profiling
+coverage.out
+coverage.html
+*.test
+*.prof
+
+# Go
+vendor/
+*.exe
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

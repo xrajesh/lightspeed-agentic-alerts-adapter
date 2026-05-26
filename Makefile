@@ -1,0 +1,55 @@
+BINARY_NAME := alerts-adapter
+MODULE := github.com/openshift/lightspeed-agentic-alerts-adapter
+CMD_DIR := ./cmd/$(BINARY_NAME)
+BIN_DIR := ./bin
+IMAGE_NAME ?= $(BINARY_NAME)
+IMAGE_TAG ?= latest
+
+GO := go
+GOFLAGS ?=
+LDFLAGS ?=
+
+.PHONY: all build test clean lint fmt vet run coverage container-build help
+
+all: build
+
+build:
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_DIR)
+
+test:
+	$(GO) test $(GOFLAGS) ./...
+
+clean:
+	rm -rf $(BIN_DIR)/$(BINARY_NAME) coverage.out coverage.html
+
+lint:
+	golangci-lint run ./...
+
+fmt:
+	$(GO) fmt ./...
+
+vet:
+	$(GO) vet ./...
+
+run: build
+	$(BIN_DIR)/$(BINARY_NAME)
+
+coverage:
+	$(GO) test -coverprofile=coverage.out ./...
+	$(GO) tool cover -html=coverage.out -o coverage.html
+
+container-build:
+	podman build -t $(IMAGE_NAME):$(IMAGE_TAG) -f Containerfile .
+
+help:
+	@echo "Targets:"
+	@echo "  build           - Build the binary"
+	@echo "  test            - Run tests"
+	@echo "  clean           - Remove build artifacts"
+	@echo "  lint            - Run golangci-lint"
+	@echo "  fmt             - Run go fmt"
+	@echo "  vet             - Run go vet"
+	@echo "  run             - Build and run the binary"
+	@echo "  coverage        - Generate test coverage report"
+	@echo "  container-build - Build container image"
+	@echo "  help            - Show this help"
