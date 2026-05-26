@@ -22,6 +22,7 @@ The adapter is a stateless, single-purpose binary written in Go 1.26. It runs as
 2. **Idempotent** — safe to restart at any time; safe under concurrent execution.
 3. **Create-only** — the adapter creates Proposals but never modifies or deletes them. The operator owns the Proposal lifecycle.
 4. **Observable** — structured logging and health/readiness probes. Prometheus metrics deferred to a future iteration.
+5. **Container-ready** — include a `Containerfile` to build the adapter image and deploy it in an OpenShift cluster.
 
 ## Architecture
 
@@ -88,7 +89,7 @@ The adapter runs a single loop:
 
 ```
 every 30 seconds:
-    1. GET /api/v2/alerts → firing alerts
+    1. GET /api/v2/alerts?active=true&silenced=false&inhibited=false → firing alerts
     2. LIST Proposals (label: source=alertmanager) → existing proposals
     3. For each firing alert:
         a. now - alert.startsAt < INITIAL_DELAY?        → skip (too transient)
@@ -98,6 +99,8 @@ every 30 seconds:
 ```
 
 **Poll interval**: 30 seconds (constant). The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
+
+The query parameters ensure the adapter only processes alerts that are actively firing and not suppressed by AlertManager's silencing or inhibition rules.
 
 ### Deduplication
 
@@ -121,8 +124,6 @@ Examples:
 - `etcdhighfsyncdurations--f9e8d7c6` (no namespace for cluster-scoped alerts)
 
 Components are sanitized to conform to DNS subdomain rules (RFC 1123): lowercased, non-alphanumeric characters replaced, truncated to fit the 253-character limit.
-
-If two poll cycles (or replicas in a future multi-replica setup) attempt to create the same Proposal concurrently, one succeeds and the other receives `409 Conflict (AlreadyExists)`. The adapter treats 409 as success.
 
 ### Alert to Proposal Mapping
 
@@ -221,11 +222,21 @@ When an alert resolves while its Proposal is still active (Analyzing, Executing,
 
 The adapter authenticates to the AlertManager API using the pod's auto-mounted ServiceAccount token:
 
-- **Endpoint**: `https://alertmanager-main.openshift-monitoring.svc:9093/api/v2/alerts`
+- **Endpoint**: `https://alertmanager-main.openshift-monitoring.svc:9094/api/v2/alerts`
 - **Authentication**: `Authorization: Bearer <ServiceAccount token>`
-- **TLS**: Verified against the cluster CA bundle (`/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`)
+- **TLS**: Verified against the cluster CA bundle (`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt`)
 
 The AlertManager URL is defined as a constant, with a path to make it configurable.
+
+### Logging
+
+The adapter uses Go's standard library `log/slog` package with JSON output. Log levels:
+
+| Level | What gets logged |
+|-------|-----------------|
+| `Info` | Poll cycle start/end, Proposal created (with alert name and namespace), adapter startup/shutdown |
+| `Error` | AlertManager unreachable, Kubernetes API errors, Proposal creation failures (non-409) |
+| `Debug` | Alerts skipped due to initial delay, existing Proposal, or cooldown window (including the skip reason and alert fingerprint) |
 
 ### Error Handling
 
@@ -283,12 +294,13 @@ The adapter's ServiceAccount needs two sets of permissions:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: lightspeed-agentic-alerts-adapter-alertmanager
+  namespace: openshift-monitoring
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: monitoring-alertmanager-view
 subjects:
   - kind: ServiceAccount
@@ -322,41 +334,11 @@ subjects:
     namespace: openshift-lightspeed
 ```
 
-### Health Probes
-
-| Probe | Path | Behavior |
-|-------|------|----------|
-| Liveness | `/healthz` | Always returns 200 if the process is running. |
-| Readiness | `/readyz` | Returns 200 if the last poll cycle completed without critical errors (AlertManager reachable, K8s API reachable). |
-
-## Project Structure
-
-```
-lightspeed-agentic-alerts-adapter/
-├── cmd/
-│   └── main.go                      # Entrypoint: flags, signal handling, run loop
-├── internal/
-│   ├── alertmanager/
-│   │   ├── client.go                # AlertManager HTTP client (GET /api/v2/alerts)
-│   │   └── types.go                 # Alert response types
-│   ├── proposal/
-│   │   ├── builder.go               # Alert → Proposal mapping, template rendering
-│   │   └── naming.go                # Deterministic name generation, sanitization
-│   └── poller/
-│       └── poller.go                # Poll loop: fetch alerts, diff, create proposals
-├── Dockerfile
-├── Makefile
-├── go.mod
-├── go.sum
-└── OWNERS
-```
-
 ### Dependencies
 
 | Dependency | Purpose |
 |-----------|---------|
 | `github.com/openshift/lightspeed-agentic-operator/api` | Typed Proposal CRD Go types |
-| `sigs.k8s.io/controller-runtime/pkg/client` | Typed Kubernetes client for Proposal CRUD |
 | `k8s.io/client-go` | In-cluster config, ServiceAccount auth |
 
 ## Configuration
@@ -368,7 +350,7 @@ All configurable values are Go constants in the initial implementation. Future i
 | `PollInterval` | `30 * time.Second` | How often to poll AlertManager |
 | `InitialDelay` | `5 * time.Minute` | Alert must fire this long before creating a Proposal |
 | `CooldownWindow` | `1 * time.Hour` | Minimum time after a terminal Proposal before re-proposing for the same alert |
-| `AlertManagerURL` | `https://alertmanager-main.openshift-monitoring.svc:9093` | AlertManager API base URL |
+| `AlertManagerURL` | `https://alertmanager-main.openshift-monitoring.svc:9094` | AlertManager API base URL |
 | `DefaultNamespace` | `openshift-lightspeed` | Namespace for Proposals from cluster-scoped alerts (no namespace label) |
 | `DefaultAgent` | `default` | Agent name for analysis, execution, and verification steps |
 
@@ -382,4 +364,4 @@ All configurable values are Go constants in the initial implementation. Future i
 - **Prometheus metrics**: `alerts_adapter_polls_total`, `proposals_created_total`, `errors_total`, `poll_duration_seconds`.
 - **Adapter-specific analysis output schema**: Inject custom fields into `analysisOutput.schema` for alert correlation, affected services topology.
 - **Workflow selection**: Choose different workflow patterns (advisory, assisted, full remediation) based on alert labels.
-- **Multi-replica support**: Leader election or sharded alert processing for high availability.
+- **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic Proposal naming, concurrent replicas attempting to create the same Proposal would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
