@@ -100,6 +100,21 @@ func TestGetAlerts(t *testing.T) {
 			expectedCount: 0,
 		},
 		{
+			name:  "bearer token with trailing newline is trimmed",
+			token: "my-sa-token\n",
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth := r.Header.Get("Authorization")
+				if auth != "Bearer my-sa-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`[]`))
+			}),
+			expectedCount: 0,
+		},
+		{
 			name:  "authentication failure",
 			token: "bad-token",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
