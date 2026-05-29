@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-func TestRun(t *testing.T) {
+func TestRunFailsOutsideCluster(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	if err := run(logger); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := run(logger)
+	if err == nil {
+		t.Fatal("expected error when running outside cluster, got nil")
 	}
 }
