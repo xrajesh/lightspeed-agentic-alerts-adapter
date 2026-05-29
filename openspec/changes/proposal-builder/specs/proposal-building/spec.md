@@ -1,3 +1,7 @@
+## Purpose
+Translate Alertmanager alerts into Proposal custom resources so the agentic operator can act on firing alerts through its analyze-execute-verify workflow.
+
+## Requirements
 ### Requirement: Build a Proposal CR from a single alert
 The system SHALL convert an Alertmanager `GettableAlert` into a `Proposal` custom resource with deterministic naming, Kubernetes-safe metadata, and a templated request for the analysis agent.
 

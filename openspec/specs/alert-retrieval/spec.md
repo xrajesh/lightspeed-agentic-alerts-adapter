@@ -1,3 +1,7 @@
+## Purpose
+Retrieve active alerts from the in-cluster Alertmanager so the adapter can translate them into actionable Proposal resources.
+
+## Requirements
 ### Requirement: Retrieve active alerts from Alertmanager
 The system SHALL query the Alertmanager API in the OpenShift cluster and return the set of currently active alerts using the types provided by the Alertmanager client library.
 
