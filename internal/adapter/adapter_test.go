@@ -269,7 +269,7 @@ func TestReconcile(t *testing.T) {
 			if len(pc.created) != tt.wantCreated {
 				t.Errorf("created %d proposals, want %d", len(pc.created), tt.wantCreated)
 			}
-			if tt.wantCreateCalls > 0 && pc.createCalls != tt.wantCreateCalls {
+			if pc.createCalls != tt.wantCreateCalls {
 				t.Errorf("CreateProposal called %d times, want %d", pc.createCalls, tt.wantCreateCalls)
 			}
 		})
