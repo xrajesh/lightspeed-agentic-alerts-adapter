@@ -58,6 +58,10 @@ type requestData struct {
 // namespace, fingerprint), making repeated calls for the same alert safe
 // against duplicate creation via Kubernetes 409 AlreadyExists.
 func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
+	if a.Fingerprint == nil {
+		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
+	}
+
 	alertName := a.Labels["alertname"]
 	namespace := a.Labels["namespace"]
 	fingerprint := *a.Fingerprint

@@ -125,6 +125,21 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+func TestBuildNilFingerprint(t *testing.T) {
+	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
+	a.Fingerprint = nil
+
+	_, err := Build(a)
+	if err == nil {
+		t.Fatal("expected error for nil fingerprint, got nil")
+	}
+
+	want := "fingerprint is nil"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err, want)
+	}
+}
+
 func TestBuildWorkflowSteps(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 	p, err := Build(a)
