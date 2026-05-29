@@ -18,16 +18,16 @@ The system SHALL list Proposal CRs filtered by the `agentic.openshift.io/source=
 ## MODIFIED Requirements
 
 ### Requirement: Create Proposal resources in the cluster
-The system SHALL provide a Kubernetes client that creates Proposal CRs using controller-runtime with in-cluster config. The client SHALL treat 409 AlreadyExists as success.
+The system SHALL provide a Kubernetes client that creates Proposal CRs using controller-runtime with in-cluster config. The client SHALL return a boolean indicating whether the Proposal was created, and treat 409 AlreadyExists as a non-error.
 
 #### Scenario: Successful creation
 - **WHEN** CreateProposal is called with a valid Proposal
-- **THEN** the Proposal is created in the cluster and no error is returned
+- **THEN** the Proposal is created in the cluster, returns true and no error
 
 #### Scenario: Proposal already exists
 - **WHEN** the Kubernetes API returns 409 AlreadyExists
-- **THEN** CreateProposal logs at Info level and returns no error
+- **THEN** CreateProposal logs at Info level and returns false and no error
 
 #### Scenario: Creation failure
 - **WHEN** the Kubernetes API returns a non-409 error
-- **THEN** CreateProposal returns a wrapped error with context
+- **THEN** CreateProposal returns false and a wrapped error with context

@@ -35,13 +35,13 @@ func (f *fakeProposalClient) ListProposals(_ context.Context) ([]agenticv1alpha1
 	return f.proposals, f.listErr
 }
 
-func (f *fakeProposalClient) CreateProposal(_ context.Context, p *agenticv1alpha1.Proposal) error {
+func (f *fakeProposalClient) CreateProposal(_ context.Context, p *agenticv1alpha1.Proposal) (bool, error) {
 	f.createCalls++
 	if f.createErr != nil {
-		return f.createErr
+		return false, f.createErr
 	}
 	f.created = append(f.created, p)
-	return nil
+	return true, nil
 }
 
 func quietLogger() *slog.Logger {

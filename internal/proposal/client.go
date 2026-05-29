@@ -49,14 +49,14 @@ func (c *Client) ListProposals(ctx context.Context) ([]agenticv1alpha1.Proposal,
 }
 
 // CreateProposal creates a Proposal resource in the cluster.
-// If the Proposal already exists (409), it logs and returns nil.
-func (c *Client) CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) error {
+// It returns true if the Proposal was created, false if it already existed.
+func (c *Client) CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) (bool, error) {
 	if err := c.Create(ctx, p); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			c.logger.Info("proposal already exists", "name", p.Name, "namespace", p.Namespace)
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("proposal: creating %s/%s: %w", p.Namespace, p.Name, err)
+		return false, fmt.Errorf("proposal: creating %s/%s: %w", p.Namespace, p.Name, err)
 	}
-	return nil
+	return true, nil
 }

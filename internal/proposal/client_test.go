@@ -38,8 +38,12 @@ func TestCreateProposal(t *testing.T) {
 		},
 	}
 
-	if err := c.CreateProposal(t.Context(), p); err != nil {
+	created, err := c.CreateProposal(t.Context(), p)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !created {
+		t.Fatal("expected created=true for new proposal")
 	}
 
 	var got agenticv1alpha1.Proposal
@@ -67,7 +71,7 @@ func TestCreateProposalAlreadyExists(t *testing.T) {
 		},
 	}
 
-	if err := c.CreateProposal(t.Context(), p); err != nil {
+	if _, err := c.CreateProposal(t.Context(), p); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 
@@ -81,8 +85,12 @@ func TestCreateProposalAlreadyExists(t *testing.T) {
 			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
 		},
 	}
-	if err := c.CreateProposal(t.Context(), duplicate); err != nil {
-		t.Fatalf("duplicate create should succeed (409 swallowed), got: %v", err)
+	created, err := c.CreateProposal(t.Context(), duplicate)
+	if err != nil {
+		t.Fatalf("duplicate create should not error, got: %v", err)
+	}
+	if created {
+		t.Fatal("expected created=false for duplicate proposal")
 	}
 }
 

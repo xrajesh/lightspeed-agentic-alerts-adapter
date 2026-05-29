@@ -43,6 +43,21 @@ The system SHALL allow the Alertmanager URL to be configured via an environment 
 - **WHEN** the environment variable for the Alertmanager URL is not set
 - **THEN** the system uses the default in-cluster Alertmanager URL
 
+### Requirement: Filter for actionable alerts
+The system SHALL request only active, non-silenced, non-inhibited alerts from the Alertmanager API so the adapter never processes suppressed alerts.
+
+#### Scenario: Silenced alerts excluded
+- **WHEN** an alert is silenced in Alertmanager
+- **THEN** the alert is not included in the response
+
+#### Scenario: Inhibited alerts excluded
+- **WHEN** an alert is inhibited by another alert in Alertmanager
+- **THEN** the alert is not included in the response
+
+#### Scenario: Resolved alerts excluded
+- **WHEN** an alert has resolved and is no longer active
+- **THEN** the alert is not included in the response
+
 ### Requirement: Log retrieved alerts on startup
 The system SHALL fetch alerts during startup and log a summary of the results using structured logging.
 

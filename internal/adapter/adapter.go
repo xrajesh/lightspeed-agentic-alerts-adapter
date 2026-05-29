@@ -28,7 +28,7 @@ type AlertSource interface {
 // ProposalClient manages Proposal custom resources in the cluster.
 type ProposalClient interface {
 	ListProposals(ctx context.Context) ([]agenticv1alpha1.Proposal, error)
-	CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) error
+	CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) (bool, error)
 }
 
 // Adapter polls AlertManager for firing alerts and creates Proposal CRs,
@@ -146,7 +146,8 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if err := a.proposals.CreateProposal(ctx, p); err != nil {
+		wasCreated, err := a.proposals.CreateProposal(ctx, p)
+		if err != nil {
 			a.logger.Error("failed to create proposal",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -156,12 +157,14 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		a.logger.Info("proposal created",
-			"alertname", alertName,
-			"fingerprint", fingerprint,
-			"proposal", p.Name,
-		)
-		created++
+		if wasCreated {
+			a.logger.Info("proposal created",
+				"alertname", alertName,
+				"fingerprint", fingerprint,
+				"proposal", p.Name,
+			)
+			created++
+		}
 	}
 
 	a.logger.Info("poll cycle complete",
