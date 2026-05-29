@@ -75,6 +75,26 @@ func TestGetAlerts(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
+			name:  "query filters for active non-silenced non-inhibited alerts",
+			token: "test-token",
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				if q.Get("active") != "true" {
+					t.Errorf("active = %q, want %q", q.Get("active"), "true")
+				}
+				if q.Get("silenced") != "false" {
+					t.Errorf("silenced = %q, want %q", q.Get("silenced"), "false")
+				}
+				if q.Get("inhibited") != "false" {
+					t.Errorf("inhibited = %q, want %q", q.Get("inhibited"), "false")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`[]`))
+			}),
+			expectedCount: 0,
+		},
+		{
 			name:  "empty alerts list",
 			token: "test-token",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -4,9 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/adapter"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/alertmanager"
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/proposal"
 )
 
 func main() {
@@ -15,44 +18,26 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	if err := run(logger); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	amClient, err := alertmanager.New(alertmanager.Config{
+		URL: os.Getenv("ALERTMANAGER_URL"),
+	})
+	if err != nil {
 		logger.Error("fatal error", "error", err)
 		os.Exit(1)
 	}
-}
 
-func run(logger *slog.Logger) error {
-	logger.Info("lightspeed-agentic-alerts-adapter starting")
-
-	cfg := alertmanager.Config{
-		URL: os.Getenv("ALERTMANAGER_URL"),
-	}
-
-	client, err := alertmanager.New(cfg)
+	propClient, err := proposal.NewClient(logger)
 	if err != nil {
-		return err
+		logger.Error("fatal error", "error", err)
+		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	alerts, err := client.GetAlerts(ctx)
-	if err != nil {
-		return err
+	a := adapter.New(amClient, propClient, logger)
+	if err := a.Run(ctx); err != nil {
+		logger.Error("fatal error", "error", err)
+		os.Exit(1)
 	}
-
-	logger.Info("alerts retrieved", "count", len(alerts))
-	for _, a := range alerts {
-		state := "unknown"
-		if a.Status != nil && a.Status.State != nil {
-			state = *a.Status.State
-		}
-		logger.Info("alert",
-			"name", a.Labels["alertname"],
-			"severity", a.Labels["severity"],
-			"state", state,
-			"startsAt", a.StartsAt,
-		)
-	}
-
-	return nil
 }

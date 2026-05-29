@@ -1,7 +1,8 @@
 package proposal
 
 import (
-	"strings"
+	"io"
+	"log/slog"
 	"testing"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
@@ -19,7 +20,8 @@ func newTestClient(t *testing.T) *Client {
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
-	return &Client{fc}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return &Client{Client: fc, logger: logger}
 }
 
 func TestCreateProposal(t *testing.T) {
@@ -51,7 +53,7 @@ func TestCreateProposal(t *testing.T) {
 	}
 }
 
-func TestCreateProposalDuplicate(t *testing.T) {
+func TestCreateProposalAlreadyExists(t *testing.T) {
 	c := newTestClient(t)
 
 	p := &agenticv1alpha1.Proposal{
@@ -79,12 +81,65 @@ func TestCreateProposalDuplicate(t *testing.T) {
 			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
 		},
 	}
-	err := c.CreateProposal(t.Context(), duplicate)
-	if err == nil {
-		t.Fatal("expected error for duplicate, got nil")
+	if err := c.CreateProposal(t.Context(), duplicate); err != nil {
+		t.Fatalf("duplicate create should succeed (409 swallowed), got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error %q does not mention already exists", err.Error())
+}
+
+func TestListProposals(t *testing.T) {
+	c := newTestClient(t)
+
+	matching := &agenticv1alpha1.Proposal{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "matching-abcdef12",
+			Namespace: proposalNamespace,
+			Labels:    map[string]string{labelSource: sourceValue},
+		},
+		Spec: agenticv1alpha1.ProposalSpec{
+			Request:  "matching",
+			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+		},
+	}
+	unrelated := &agenticv1alpha1.Proposal{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "unrelated-12345678",
+			Namespace: proposalNamespace,
+			Labels:    map[string]string{labelSource: "other"},
+		},
+		Spec: agenticv1alpha1.ProposalSpec{
+			Request:  "unrelated",
+			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+		},
+	}
+
+	if err := c.Create(t.Context(), matching); err != nil {
+		t.Fatalf("creating matching proposal: %v", err)
+	}
+	if err := c.Create(t.Context(), unrelated); err != nil {
+		t.Fatalf("creating unrelated proposal: %v", err)
+	}
+
+	proposals, err := c.ListProposals(t.Context())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(proposals) != 1 {
+		t.Fatalf("got %d proposals, want 1", len(proposals))
+	}
+	if proposals[0].Name != "matching-abcdef12" {
+		t.Errorf("name = %q, want %q", proposals[0].Name, "matching-abcdef12")
+	}
+}
+
+func TestListProposalsEmpty(t *testing.T) {
+	c := newTestClient(t)
+
+	proposals, err := c.ListProposals(t.Context())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(proposals) != 0 {
+		t.Errorf("got %d proposals, want 0", len(proposals))
 	}
 }
 

@@ -30,7 +30,9 @@ const (
 
 	maxLabelValueLen = 63
 	maxNameLen       = 253
-	fingerprintLen   = 8
+	// FingerprintLen is the number of characters used from the alert fingerprint
+	// for labels and dedup matching. Exported for use by the adapter package.
+	FingerprintLen = 8
 	maxSummaryLen    = 256
 )
 
@@ -102,8 +104,8 @@ func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
 // or {alertname}-{fingerprint[:8]} for cluster-scoped alerts.
 func buildName(alertName, namespace, fingerprint string) string {
 	fp := fingerprint
-	if len(fp) > fingerprintLen {
-		fp = fp[:fingerprintLen]
+	if len(fp) > FingerprintLen {
+		fp = fp[:FingerprintLen]
 	}
 
 	name := strings.ToLower(alertName)
@@ -132,7 +134,7 @@ func buildName(alertName, namespace, fingerprint string) string {
 func buildLabels(alertName, severity, fingerprint string) map[string]string {
 	labels := map[string]string{
 		labelSource:      sourceValue,
-		labelFingerprint: sanitizeLabelValue(fingerprint[:min(len(fingerprint), fingerprintLen)]),
+		labelFingerprint: sanitizeLabelValue(fingerprint[:min(len(fingerprint), FingerprintLen)]),
 		labelAlertName:   sanitizeLabelValue(strings.ToLower(alertName)),
 		labelSeverity:    sanitizeLabelValue(severity),
 	}
