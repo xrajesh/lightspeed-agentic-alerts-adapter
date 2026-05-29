@@ -52,7 +52,7 @@ func TestBuild(t *testing.T) {
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
 				labelFingerprint: "abcdef12",
-				labelAlertName:   "KubePodCrashLooping",
+				labelAlertName:   "kubepodcrashlooping",
 				labelSeverity:    "critical",
 			},
 		},
@@ -69,7 +69,7 @@ func TestBuild(t *testing.T) {
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
 				labelFingerprint: "ff00ff00",
-				labelAlertName:   "ClusterVersionAvailable",
+				labelAlertName:   "clusterversionavailable",
 				labelSeverity:    "info",
 			},
 		},
@@ -82,7 +82,7 @@ func TestBuild(t *testing.T) {
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
 				labelFingerprint: "abc",
-				labelAlertName:   "TestAlert",
+				labelAlertName:   "testalert",
 				labelSeverity:    "warning",
 			},
 		},

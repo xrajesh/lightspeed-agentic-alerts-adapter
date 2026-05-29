@@ -133,7 +133,7 @@ func buildLabels(alertName, severity, fingerprint string) map[string]string {
 	labels := map[string]string{
 		labelSource:      sourceValue,
 		labelFingerprint: sanitizeLabelValue(fingerprint[:min(len(fingerprint), fingerprintLen)]),
-		labelAlertName:   sanitizeLabelValue(alertName),
+		labelAlertName:   sanitizeLabelValue(strings.ToLower(alertName)),
 		labelSeverity:    sanitizeLabelValue(severity),
 	}
 	return labels
