@@ -96,7 +96,13 @@ func (c *Client) GetAlerts(ctx context.Context) (models.GettableAlerts, error) {
 		return nil, fmt.Errorf("alertmanager: reading service account token from %s: %w", c.tokenPath, err)
 	}
 
-	params := alert.NewGetAlertsParamsWithContext(ctx)
+	active := true
+	silenced := false
+	inhibited := false
+	params := alert.NewGetAlertsParamsWithContext(ctx).
+		WithActive(&active).
+		WithSilenced(&silenced).
+		WithInhibited(&inhibited)
 	bearerAuth := httptransport.BearerToken(strings.TrimSpace(string(token)))
 
 	resp, err := c.api.Alert.GetAlerts(params, func(op *runtime.ClientOperation) {
