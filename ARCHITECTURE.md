@@ -271,14 +271,9 @@ spec:
       containers:
         - name: adapter
           image: quay.io/openshift-lightspeed/lightspeed-agentic-alerts-adapter:latest
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8081
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 8081
+          env:
+            - name: ALERTMANAGER_URL
+              value: https://alertmanager-main.openshift-monitoring.svc:9094
 ```
 
 Single replica is sufficient because:
