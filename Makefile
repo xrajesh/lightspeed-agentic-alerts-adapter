@@ -8,8 +8,10 @@ IMAGE_TAG ?= latest
 GO := go
 GOFLAGS ?=
 LDFLAGS ?=
+GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT = $(shell which golangci-lint 2>/dev/null)
 
-.PHONY: all build test clean lint fmt vet run coverage container-build help
+.PHONY: all build test clean lint fmt vet run coverage container-build help install-lint
 
 all: build
 
@@ -22,8 +24,13 @@ test:
 clean:
 	rm -rf $(BIN_DIR)/$(BINARY_NAME) coverage.out coverage.html
 
-lint:
-	golangci-lint run ./...
+install-lint:
+ifeq ($(GOLANGCI_LINT),)
+	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+endif
+
+lint: install-lint
+	$(GOLANGCI_LINT) run ./...
 
 fmt:
 	$(GO) fmt ./...
