@@ -10,7 +10,7 @@
 
 ### Proposing changes
 
-This project uses the [OpenSpec](https://github.com/samber/openspec) framework to manage specs and changes. Before starting implementation, propose your change through OpenSpec:
+This project uses the [OpenSpec](https://github.com/Fission-AI/OpenSpec) framework to manage specs and changes. Before starting implementation, propose your change through OpenSpec:
 
 1. Run `/openspec-propose` (or `/opsx:propose`) to create a proposal with design, specs, and tasks
 2. Get the proposal reviewed and approved

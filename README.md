@@ -59,7 +59,7 @@ Internal polling parameters (constants in `internal/adapter/adapter.go`):
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — design rationale, requirements, deployment model, and future work
-- [openspec/specs/](openspec/specs/) — detailed specs for each subsystem, managed with the [OpenSpec](https://github.com/samber/openspec) framework
+- [openspec/specs/](openspec/specs/) — detailed specs for each subsystem, managed with the [OpenSpec](https://github.com/Fission-AI/OpenSpec) framework
 
 ## License
 
