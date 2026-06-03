@@ -14,9 +14,17 @@ spec:
         app: lightspeed-agentic-alerts-adapter
     spec:
       serviceAccountName: lightspeed-agentic-alerts-adapter
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: adapter
           image: quay.io/openshift-lightspeed/lightspeed-agentic-alerts-adapter:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: ALERTMANAGER_URL
               value: https://alertmanager-main.openshift-monitoring.svc:9094
