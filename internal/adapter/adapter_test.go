@@ -55,12 +55,20 @@ func quietLogger() *slog.Logger {
 func ptr[T any](v T) *T { return &v }
 
 func makeAlert(name, fingerprint string, startsAt time.Time) *models.GettableAlert {
+	return makeAlertWithSeverity(name, fingerprint, startsAt, "warning")
+}
+
+func makeAlertWithSeverity(name, fingerprint string, startsAt time.Time, severity string) *models.GettableAlert {
 	sa := strfmt.DateTime(startsAt)
+	labels := models.LabelSet{"alertname": name}
+	if severity != "" {
+		labels["severity"] = severity
+	}
 	return &models.GettableAlert{
 		Fingerprint: &fingerprint,
 		StartsAt:    &sa,
 		Alert: models.Alert{
-			Labels: models.LabelSet{"alertname": name, "severity": "warning"},
+			Labels: labels,
 		},
 		Annotations: models.LabelSet{"summary": "test alert"},
 	}
@@ -269,6 +277,85 @@ func TestReconcile(t *testing.T) {
 			if len(pc.created) != tt.wantCreated {
 				t.Errorf("created %d proposals, want %d", len(pc.created), tt.wantCreated)
 			}
+			if pc.createCalls != tt.wantCreateCalls {
+				t.Errorf("CreateProposal called %d times, want %d", pc.createCalls, tt.wantCreateCalls)
+			}
+		})
+	}
+}
+
+func TestSkipSeverity(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		severity string
+		want     bool
+	}{
+		{name: "none is skipped", severity: "none", want: true},
+		{name: "info is skipped", severity: "info", want: true},
+		{name: "None mixed case is skipped", severity: "None", want: true},
+		{name: "INFO uppercase is skipped", severity: "INFO", want: true},
+		{name: "NONE uppercase is skipped", severity: "NONE", want: true},
+		{name: "Info mixed case is skipped", severity: "Info", want: true},
+		{name: "warning is not skipped", severity: "warning", want: false},
+		{name: "critical is not skipped", severity: "critical", want: false},
+		{name: "empty string is not skipped", severity: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			alert := makeAlertWithSeverity("TestAlert", "abc123", now, tt.severity)
+			got := skipSeverity(alert)
+			if got != tt.want {
+				t.Errorf("skipSeverity(severity=%q) = %v, want %v", tt.severity, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing severity label is not skipped", func(t *testing.T) {
+		alert := &models.GettableAlert{
+			Alert: models.Alert{
+				Labels: models.LabelSet{"alertname": "TestAlert"},
+			},
+		}
+		if skipSeverity(alert) {
+			t.Error("skipSeverity() = true for missing severity label, want false")
+		}
+	})
+}
+
+func TestReconcileSkipsSeverity(t *testing.T) {
+	now := time.Now()
+	oldEnough := now.Add(-10 * time.Minute)
+
+	tests := []struct {
+		name            string
+		severity        string
+		wantCreateCalls int
+	}{
+		{name: "none severity not processed", severity: "none", wantCreateCalls: 0},
+		{name: "info severity not processed", severity: "info", wantCreateCalls: 0},
+		{name: "warning severity processed", severity: "warning", wantCreateCalls: 1},
+		{name: "critical severity processed", severity: "critical", wantCreateCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			alert := makeAlertWithSeverity("HighCPU", "abcdef1234567890", oldEnough, tt.severity)
+			as := &fakeAlertSource{alerts: models.GettableAlerts{alert}}
+			pc := &fakeProposalClient{}
+
+			a := &Adapter{
+				alerts:         as,
+				proposals:      pc,
+				initialDelay:   initialDelay,
+				cooldownWindow: cooldownWindow,
+				logger:         quietLogger(),
+			}
+
+			a.reconcile(context.Background())
+
 			if pc.createCalls != tt.wantCreateCalls {
 				t.Errorf("CreateProposal called %d times, want %d", pc.createCalls, tt.wantCreateCalls)
 			}
