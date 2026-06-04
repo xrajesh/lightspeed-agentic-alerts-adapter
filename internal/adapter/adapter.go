@@ -5,6 +5,7 @@ package adapter
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
@@ -106,6 +107,16 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		}
 		alertName := alert.Labels["alertname"]
 
+		if skipSeverity(alert) {
+			a.logger.Debug("alert skipped: low severity",
+				"alertname", alertName,
+				"fingerprint", fingerprint,
+				"severity", alert.Labels["severity"],
+			)
+			skipped++
+			continue
+		}
+
 		if skipInitialDelay(alert, now, a.initialDelay) {
 			a.logger.Debug("alert skipped: initial delay",
 				"alertname", alertName,
@@ -172,6 +183,11 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		"skipped", skipped,
 		"created", created,
 	)
+}
+
+func skipSeverity(alert *models.GettableAlert) bool {
+	sev := strings.ToLower(string(alert.Labels["severity"]))
+	return sev == "none" || sev == "info"
 }
 
 func skipInitialDelay(alert *models.GettableAlert, now time.Time, threshold time.Duration) bool {
