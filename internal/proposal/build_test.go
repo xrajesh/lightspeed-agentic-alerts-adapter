@@ -242,11 +242,9 @@ func TestBuildRequest(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"Alert: KubePodCrashLooping",
-		"Severity: critical",
+		"Alert: KubePodCrashLooping (critical)",
 		"Namespace: production",
 		"Runbook URL: https://runbooks.example.com/KubePodCrashLooping",
-		"Summary: Pod is crash looping",
 		"Description: Pod my-pod has restarted 5 times in the last hour",
 		"alertname: KubePodCrashLooping",
 	} {
