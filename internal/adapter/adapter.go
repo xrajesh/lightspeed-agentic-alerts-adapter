@@ -12,13 +12,8 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/proposal"
-)
-
-const (
-	pollInterval   = 30 * time.Second
-	initialDelay   = 5 * time.Minute
-	cooldownWindow = 1 * time.Hour
 )
 
 // AlertSource retrieves firing alerts from an external alerting system.
@@ -32,37 +27,41 @@ type ProposalClient interface {
 	CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) (bool, error)
 }
 
+// ConfigSource provides runtime configuration for each poll cycle.
+type ConfigSource interface {
+	Load(ctx context.Context) config.Config
+}
+
 // Adapter polls AlertManager for firing alerts and creates Proposal CRs,
 // applying stateless deduplication (initial delay, active-proposal check,
 // and cooldown window) on each cycle.
 type Adapter struct {
-	alerts         AlertSource
-	proposals      ProposalClient
-	pollInterval   time.Duration
-	initialDelay   time.Duration
-	cooldownWindow time.Duration
-	logger         *slog.Logger
+	alerts    AlertSource
+	proposals ProposalClient
+	config    ConfigSource
+	logger    *slog.Logger
 }
 
-// New creates an Adapter with the given alert source, proposal client, and logger.
-func New(alerts AlertSource, proposals ProposalClient, logger *slog.Logger) *Adapter {
+// New creates an Adapter with the given alert source, proposal client,
+// config source, and logger.
+func New(alerts AlertSource, proposals ProposalClient, cfg ConfigSource, logger *slog.Logger) *Adapter {
 	return &Adapter{
-		alerts:         alerts,
-		proposals:      proposals,
-		pollInterval:   pollInterval,
-		initialDelay:   initialDelay,
-		cooldownWindow: cooldownWindow,
-		logger:         logger,
+		alerts:    alerts,
+		proposals: proposals,
+		config:    cfg,
+		logger:    logger,
 	}
 }
 
 // Run starts the poll loop, blocking until the context is cancelled.
 func (a *Adapter) Run(ctx context.Context) error {
-	a.logger.Info("adapter started", "pollInterval", a.pollInterval, "initialDelay", a.initialDelay, "cooldownWindow", a.cooldownWindow)
+	cfg := a.config.Load(ctx)
+	a.logger.Info("adapter started", "pollInterval", cfg.PollInterval, "initialDelay", cfg.InitialDelay, "cooldownWindow", cfg.CooldownWindow)
 
 	a.reconcile(ctx)
 
-	ticker := time.NewTicker(a.pollInterval)
+	currentInterval := cfg.PollInterval
+	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
 
 	for {
@@ -72,12 +71,21 @@ func (a *Adapter) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			a.reconcile(ctx)
+
+			cfg = a.config.Load(ctx)
+			if cfg.PollInterval != currentInterval {
+				a.logger.Info("poll interval changed", "old", currentInterval, "new", cfg.PollInterval)
+				currentInterval = cfg.PollInterval
+				ticker.Reset(currentInterval)
+			}
 		}
 	}
 }
 
 func (a *Adapter) reconcile(ctx context.Context) {
 	a.logger.Debug("poll cycle start")
+
+	cfg := a.config.Load(ctx)
 
 	alerts, err := a.alerts.GetAlerts(ctx)
 	if err != nil {
@@ -117,12 +125,12 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if skipInitialDelay(alert, now, a.initialDelay) {
+		if skipInitialDelay(alert, now, cfg.InitialDelay) {
 			a.logger.Debug("alert skipped: initial delay",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
 				"startsAt", alert.StartsAt,
-				"threshold", a.initialDelay,
+				"threshold", cfg.InitialDelay,
 			)
 			skipped++
 			continue
@@ -137,11 +145,11 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if inCooldown(alert, proposals, now, a.cooldownWindow) {
+		if inCooldown(alert, proposals, now, cfg.CooldownWindow) {
 			a.logger.Debug("alert skipped: cooldown window",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
-				"cooldown", a.cooldownWindow,
+				"cooldown", cfg.CooldownWindow,
 			)
 			skipped++
 			continue

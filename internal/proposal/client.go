@@ -7,8 +7,6 @@ import (
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -18,24 +16,9 @@ type Client struct {
 	logger *slog.Logger
 }
 
-// NewClient creates a Client using in-cluster config with the Proposal scheme registered.
-func NewClient(logger *slog.Logger) (*Client, error) {
-	scheme := runtime.NewScheme()
-	if err := agenticv1alpha1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("proposal: registering scheme: %w", err)
-	}
-
-	cfg, err := ctrl.GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("proposal: loading kubeconfig: %w", err)
-	}
-
-	c, err := client.New(cfg, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, fmt.Errorf("proposal: creating client: %w", err)
-	}
-
-	return &Client{Client: c, logger: logger}, nil
+// NewClient creates a Client that wraps the given controller-runtime client.
+func NewClient(c client.Client, logger *slog.Logger) *Client {
+	return &Client{Client: c, logger: logger}
 }
 
 // ListProposals returns all Proposals created by this adapter, filtered by the

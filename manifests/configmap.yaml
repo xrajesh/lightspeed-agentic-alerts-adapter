@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alerts-adapter-config
+  namespace: openshift-lightspeed
+data:
+  config.yaml: |
+    # pollInterval: how often to poll AlertManager for firing alerts.
+    # Default: 30s
+    pollInterval: 30s
+
+    # initialDelay: how long an alert must be firing before a Proposal is created.
+    # Filters out transient alerts that resolve on their own.
+    # Default: 5m
+    initialDelay: 5m
+
+    # cooldownWindow: after a Proposal reaches a terminal state (Completed, Failed,
+    # Denied, Escalated), how long to wait before creating a new Proposal for the
+    # same alert fingerprint. Prevents flooding for flapping alerts.
+    # Default: 1h
+    cooldownWindow: 1h
