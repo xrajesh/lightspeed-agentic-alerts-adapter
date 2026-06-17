@@ -127,13 +127,25 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 	}
 
 	if cf.PollInterval.isSet {
-		cfg.PollInterval = cf.PollInterval.Duration
+		if cf.PollInterval.Duration > 0 {
+			cfg.PollInterval = cf.PollInterval.Duration
+		} else {
+			s.logger.Warn("pollInterval must be positive, using default", "value", cf.PollInterval.Duration)
+		}
 	}
 	if cf.InitialDelay.isSet {
-		cfg.InitialDelay = cf.InitialDelay.Duration
+		if cf.InitialDelay.Duration > 0 {
+			cfg.InitialDelay = cf.InitialDelay.Duration
+		} else {
+			s.logger.Warn("initialDelay must be positive, using default", "value", cf.InitialDelay.Duration)
+		}
 	}
 	if cf.CooldownWindow.isSet {
-		cfg.CooldownWindow = cf.CooldownWindow.Duration
+		if cf.CooldownWindow.Duration > 0 {
+			cfg.CooldownWindow = cf.CooldownWindow.Duration
+		} else {
+			s.logger.Warn("cooldownWindow must be positive, using default", "value", cf.CooldownWindow.Duration)
+		}
 	}
 
 	cfg.Skills = s.parseSkills(cf.Skills)

@@ -110,6 +110,41 @@ func TestParseConfigFileInvalid(t *testing.T) {
 	}
 }
 
+func TestNonPositiveDurationsFallBackToDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "zero poll interval",
+			yaml: "pollInterval: 0s",
+		},
+		{
+			name: "negative initial delay",
+			yaml: "initialDelay: -5m",
+		},
+		{
+			name: "negative cooldown window",
+			yaml: "cooldownWindow: -1h",
+		},
+		{
+			name: "all zero",
+			yaml: "pollInterval: 0s\ninitialDelay: 0s\ncooldownWindow: 0s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			assertDefaults(t, cfg)
+		})
+	}
+}
+
 func TestLoadConfigMapNotFound(t *testing.T) {
 	src := newTestSource(t)
 
