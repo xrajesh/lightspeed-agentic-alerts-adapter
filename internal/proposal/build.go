@@ -59,7 +59,8 @@ type requestData struct {
 // The Proposal name is deterministic based on the alert's identity (alertname,
 // namespace, fingerprint), making repeated calls for the same alert safe
 // against duplicate creation via Kubernetes 409 AlreadyExists.
-func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
+// When skills is non-empty, spec.tools.skills is set on the Proposal.
+func Build(a *models.GettableAlert, skills []agenticv1alpha1.SkillsSource) (*agenticv1alpha1.Proposal, error) {
 	if a.Fingerprint == nil {
 		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
 	}
@@ -95,6 +96,12 @@ func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
 
 	if namespace != "" {
 		p.Spec.TargetNamespaces = []string{namespace}
+	}
+
+	if len(skills) > 0 {
+		p.Spec.Tools = agenticv1alpha1.ToolsSpec{
+			Skills: skills,
+		}
 	}
 
 	return p, nil

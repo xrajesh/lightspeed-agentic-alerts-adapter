@@ -19,3 +19,13 @@ data:
     # same alert fingerprint. Prevents flooding for flapping alerts.
     # Default: 1h
     cooldownWindow: 1h
+
+    # skills: OCI images containing skills to mount in the agent's sandbox pod.
+    # Each entry specifies an image and the paths within that image to mount.
+    # When configured, every Proposal created by the adapter will include these
+    # skills in spec.tools.skills. Omit to create Proposals with no tools.
+    # skills:
+    #   - image: registry.redhat.io/openshift-lightspeed/agentic-skills:latest
+    #     paths:
+    #       - /skills/prometheus
+    #       - /skills/cluster-diagnostics

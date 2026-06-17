@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-openapi/strfmt"
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	"github.com/prometheus/alertmanager/api/v2/models"
 )
 
@@ -90,7 +91,7 @@ func TestBuild(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := Build(tt.alert)
+			p, err := Build(tt.alert, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -129,7 +130,7 @@ func TestBuildNilFingerprint(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 	a.Fingerprint = nil
 
-	_, err := Build(a)
+	_, err := Build(a, nil)
 	if err == nil {
 		t.Fatal("expected error for nil fingerprint, got nil")
 	}
@@ -142,7 +143,7 @@ func TestBuildNilFingerprint(t *testing.T) {
 
 func TestBuildWorkflowSteps(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a)
+	p, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,11 +162,11 @@ func TestBuildWorkflowSteps(t *testing.T) {
 func TestBuildDeterministicNaming(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical")
 
-	p1, err := Build(a)
+	p1, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("first build: %v", err)
 	}
-	p2, err := Build(a)
+	p2, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("second build: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestBuildDeterministicNaming(t *testing.T) {
 func TestBuildAnnotations(t *testing.T) {
 	t.Run("starts-at is RFC3339 UTC", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a)
+		p, err := Build(a, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -191,7 +192,7 @@ func TestBuildAnnotations(t *testing.T) {
 
 	t.Run("summary is included", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a)
+		p, err := Build(a, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -206,7 +207,7 @@ func TestBuildAnnotations(t *testing.T) {
 		startsAt := strfmt.DateTime(time.Time{})
 		a.StartsAt = &startsAt
 
-		p, err := Build(a)
+		p, err := Build(a, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -222,7 +223,7 @@ func TestBuildAnnotations(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 		a.Annotations["summary"] = strings.Repeat("x", 300)
 
-		p, err := Build(a)
+		p, err := Build(a, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -236,7 +237,7 @@ func TestBuildRequest(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef12", "critical")
 	a.Annotations["runbook_url"] = "https://runbooks.example.com/KubePodCrashLooping"
 
-	p, err := Build(a)
+	p, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -256,7 +257,7 @@ func TestBuildRequest(t *testing.T) {
 
 func TestBuildRequestWithoutRunbook(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a)
+	p, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -374,7 +375,7 @@ func TestSanitizeLabelValue(t *testing.T) {
 
 func TestBuildTypeMeta(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a)
+	p, err := Build(a, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -385,4 +386,67 @@ func TestBuildTypeMeta(t *testing.T) {
 	if p.Kind != "Proposal" {
 		t.Errorf("kind = %q, want %q", p.Kind, "Proposal")
 	}
+}
+
+func TestBuildWithSkills(t *testing.T) {
+	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
+
+	t.Run("nil skills omits tools", func(t *testing.T) {
+		p, err := Build(a, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !p.Spec.Tools.IsZero() {
+			t.Errorf("expected zero tools, got %+v", p.Spec.Tools)
+		}
+	})
+
+	t.Run("empty skills slice omits tools", func(t *testing.T) {
+		p, err := Build(a, []agenticv1alpha1.SkillsSource{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !p.Spec.Tools.IsZero() {
+			t.Errorf("expected zero tools, got %+v", p.Spec.Tools)
+		}
+	})
+
+	t.Run("single skill sets tools", func(t *testing.T) {
+		skills := []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+		}
+		p, err := Build(a, skills)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(p.Spec.Tools.Skills) != 1 {
+			t.Fatalf("tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
+		}
+		if p.Spec.Tools.Skills[0].Image != "registry.example.com/skills:latest" {
+			t.Errorf("tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/skills:latest")
+		}
+		if len(p.Spec.Tools.Skills[0].Paths) != 1 || p.Spec.Tools.Skills[0].Paths[0] != "/skills/prometheus" {
+			t.Errorf("tools.skills[0].paths = %v, want [/skills/prometheus]", p.Spec.Tools.Skills[0].Paths)
+		}
+	})
+
+	t.Run("multiple skills sets tools", func(t *testing.T) {
+		skills := []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+			{Image: "registry.example.com/acs-skills:latest", Paths: []string{"/skills/acs", "/skills/cve"}},
+		}
+		p, err := Build(a, skills)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(p.Spec.Tools.Skills) != 2 {
+			t.Fatalf("tools.skills length = %d, want 2", len(p.Spec.Tools.Skills))
+		}
+		if p.Spec.Tools.Skills[1].Image != "registry.example.com/acs-skills:latest" {
+			t.Errorf("tools.skills[1].image = %q, want %q", p.Spec.Tools.Skills[1].Image, "registry.example.com/acs-skills:latest")
+		}
+		if len(p.Spec.Tools.Skills[1].Paths) != 2 {
+			t.Errorf("tools.skills[1].paths length = %d, want 2", len(p.Spec.Tools.Skills[1].Paths))
+		}
+	})
 }

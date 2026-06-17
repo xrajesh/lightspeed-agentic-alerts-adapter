@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -104,10 +105,7 @@ func TestParseConfigFileInvalid(t *testing.T) {
 
 			cfg := src.Load(context.Background())
 
-			defaults := Default()
-			if cfg != defaults {
-				t.Errorf("expected defaults on invalid input, got %+v", cfg)
-			}
+			assertDefaults(t, cfg)
 		})
 	}
 }
@@ -117,10 +115,7 @@ func TestLoadConfigMapNotFound(t *testing.T) {
 
 	cfg := src.Load(context.Background())
 
-	defaults := Default()
-	if cfg != defaults {
-		t.Errorf("expected defaults when ConfigMap not found, got %+v", cfg)
-	}
+	assertDefaults(t, cfg)
 }
 
 func TestLoadConfigMapMissingKey(t *testing.T) {
@@ -137,10 +132,7 @@ func TestLoadConfigMapMissingKey(t *testing.T) {
 
 	cfg := src.Load(context.Background())
 
-	defaults := Default()
-	if cfg != defaults {
-		t.Errorf("expected defaults when config.yaml key missing, got %+v", cfg)
-	}
+	assertDefaults(t, cfg)
 }
 
 func TestLoadConfigMapEmptyData(t *testing.T) {
@@ -154,10 +146,7 @@ func TestLoadConfigMapEmptyData(t *testing.T) {
 
 	cfg := src.Load(context.Background())
 
-	defaults := Default()
-	if cfg != defaults {
-		t.Errorf("expected defaults when ConfigMap has no data, got %+v", cfg)
-	}
+	assertDefaults(t, cfg)
 }
 
 func configMapWith(yamlData string) *corev1.ConfigMap {
@@ -180,4 +169,132 @@ func newTestSource(t *testing.T, objs ...runtime.Object) *ConfigMapSource {
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
 	return NewConfigMapSource(c, defaultNamespace, quietLogger())
+}
+
+func assertDefaults(t *testing.T, cfg Config) {
+	t.Helper()
+	defaults := Default()
+	if cfg.PollInterval != defaults.PollInterval {
+		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, defaults.PollInterval)
+	}
+	if cfg.InitialDelay != defaults.InitialDelay {
+		t.Errorf("InitialDelay = %v, want %v", cfg.InitialDelay, defaults.InitialDelay)
+	}
+	if cfg.CooldownWindow != defaults.CooldownWindow {
+		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
+	}
+	if len(cfg.Skills) != 0 {
+		t.Errorf("Skills = %v, want empty", cfg.Skills)
+	}
+}
+
+func TestParseSkillsConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		yaml       string
+		wantSkills []agenticv1alpha1.SkillsSource
+	}{
+		{
+			name: "valid single skill",
+			yaml: `
+skills:
+  - image: registry.example.com/skills:latest
+    paths:
+      - /skills/prometheus
+`,
+			wantSkills: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+			},
+		},
+		{
+			name: "valid multiple skills",
+			yaml: `
+skills:
+  - image: registry.example.com/skills:latest
+    paths:
+      - /skills/prometheus
+      - /skills/cluster-diagnostics
+  - image: registry.example.com/acs:latest
+    paths:
+      - /skills/acs
+`,
+			wantSkills: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus", "/skills/cluster-diagnostics"}},
+				{Image: "registry.example.com/acs:latest", Paths: []string{"/skills/acs"}},
+			},
+		},
+		{
+			name:       "no skills key",
+			yaml:       "pollInterval: 30s",
+			wantSkills: nil,
+		},
+		{
+			name:       "empty skills list",
+			yaml:       "skills: []",
+			wantSkills: nil,
+		},
+		{
+			name: "skills entry with empty image skipped",
+			yaml: `
+skills:
+  - image: ""
+    paths:
+      - /skills/prometheus
+`,
+			wantSkills: nil,
+		},
+		{
+			name: "skills entry with empty paths skipped",
+			yaml: `
+skills:
+  - image: registry.example.com/skills:latest
+    paths: []
+`,
+			wantSkills: nil,
+		},
+		{
+			name: "mix of valid and invalid entries",
+			yaml: `
+skills:
+  - image: ""
+    paths:
+      - /skills/bad
+  - image: registry.example.com/good:latest
+    paths:
+      - /skills/good
+  - image: registry.example.com/no-paths:latest
+    paths: []
+`,
+			wantSkills: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/good:latest", Paths: []string{"/skills/good"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			if len(cfg.Skills) != len(tt.wantSkills) {
+				t.Fatalf("skills length = %d, want %d", len(cfg.Skills), len(tt.wantSkills))
+			}
+			for i, want := range tt.wantSkills {
+				got := cfg.Skills[i]
+				if got.Image != want.Image {
+					t.Errorf("skills[%d].image = %q, want %q", i, got.Image, want.Image)
+				}
+				if len(got.Paths) != len(want.Paths) {
+					t.Fatalf("skills[%d].paths length = %d, want %d", i, len(got.Paths), len(want.Paths))
+				}
+				for j, p := range want.Paths {
+					if got.Paths[j] != p {
+						t.Errorf("skills[%d].paths[%d] = %q, want %q", i, j, got.Paths[j], p)
+					}
+				}
+			}
+		})
+	}
 }

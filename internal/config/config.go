@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +30,7 @@ type Config struct {
 	PollInterval   time.Duration
 	InitialDelay   time.Duration
 	CooldownWindow time.Duration
+	Skills         []agenticv1alpha1.SkillsSource
 }
 
 // Default returns a Config with the default values.
@@ -41,9 +43,15 @@ func Default() Config {
 }
 
 type configFile struct {
-	PollInterval   Duration `yaml:"pollInterval"`
-	InitialDelay   Duration `yaml:"initialDelay"`
-	CooldownWindow Duration `yaml:"cooldownWindow"`
+	PollInterval   Duration      `yaml:"pollInterval"`
+	InitialDelay   Duration      `yaml:"initialDelay"`
+	CooldownWindow Duration      `yaml:"cooldownWindow"`
+	Skills         []skillsEntry `yaml:"skills"`
+}
+
+type skillsEntry struct {
+	Image string   `yaml:"image"`
+	Paths []string `yaml:"paths"`
 }
 
 // Duration wraps time.Duration for YAML unmarshalling.
@@ -128,5 +136,26 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 		cfg.CooldownWindow = cf.CooldownWindow.Duration
 	}
 
+	cfg.Skills = s.parseSkills(cf.Skills)
+
 	return cfg
+}
+
+func (s *ConfigMapSource) parseSkills(entries []skillsEntry) []agenticv1alpha1.SkillsSource {
+	var skills []agenticv1alpha1.SkillsSource
+	for i, e := range entries {
+		if e.Image == "" {
+			s.logger.Warn("skills entry has empty image, skipping", "index", i)
+			continue
+		}
+		if len(e.Paths) == 0 {
+			s.logger.Warn("skills entry has empty paths, skipping", "index", i, "image", e.Image)
+			continue
+		}
+		skills = append(skills, agenticv1alpha1.SkillsSource{
+			Image: e.Image,
+			Paths: e.Paths,
+		})
+	}
+	return skills
 }
