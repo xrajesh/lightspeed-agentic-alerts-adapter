@@ -29,7 +29,6 @@ const (
 	sourceValue = "alertmanager"
 
 	maxLabelValueLen = 63
-	maxNameLen       = 253
 	// FingerprintLen is the number of characters used from the alert fingerprint
 	// for labels and dedup matching. Exported for use by the adapter package.
 	FingerprintLen = 8
@@ -102,6 +101,8 @@ func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
 
 // buildName produces a deterministic DNS-compatible name: {alertname}-{namespace}-{fingerprint[:8]}
 // or {alertname}-{fingerprint[:8]} for cluster-scoped alerts.
+// The name is capped at 63 characters because the agentic operator uses it as a
+// Kubernetes label value, which has a 63-byte limit.
 func buildName(alertName, namespace, fingerprint string) string {
 	fp := fingerprint
 	if len(fp) > FingerprintLen {
@@ -115,18 +116,18 @@ func buildName(alertName, namespace, fingerprint string) string {
 		ns := strings.ToLower(namespace)
 		ns = invalidDNSChars.ReplaceAllString(ns, "-")
 		combined := name + "-" + ns + "-" + fp
-		if len(combined) <= maxNameLen {
+		if len(combined) <= maxLabelValueLen {
 			return combined
 		}
-		available := max(maxNameLen-len(ns)-len(fp)-2, 1)
+		available := max(maxLabelValueLen-len(ns)-len(fp)-2, 1)
 		return truncateDNS(name, available) + "-" + ns + "-" + fp
 	}
 
 	combined := name + "-" + fp
-	if len(combined) <= maxNameLen {
+	if len(combined) <= maxLabelValueLen {
 		return combined
 	}
-	available := maxNameLen - len(fp) - 1
+	available := maxLabelValueLen - len(fp) - 1
 	return truncateDNS(name, available) + "-" + fp
 }
 
