@@ -296,18 +296,25 @@ func TestBuildName(t *testing.T) {
 			expected:    "alert-with-special-chars-my-ns--aabbccdd",
 		},
 		{
+			name:        "long name truncated to 63 chars with namespace",
+			alertName:   "AlertmanagerReceiversNotConfigured",
+			namespace:   "openshift-monitoring",
+			fingerprint: "72bc0ebbaa112233",
+			expected:    "alertmanagerreceiversnotconfigure-openshift-monitoring-72bc0ebb",
+		},
+		{
 			name:        "long alert name truncated with namespace",
 			alertName:   strings.Repeat("a", 250),
 			namespace:   "ns",
 			fingerprint: "12345678",
-			expected:    strings.Repeat("a", 253-len("-ns-12345678")) + "-ns-12345678",
+			expected:    strings.Repeat("a", maxLabelValueLen-len("-ns-12345678")) + "-ns-12345678",
 		},
 		{
 			name:        "long alert name truncated without namespace",
 			alertName:   strings.Repeat("a", 250),
 			namespace:   "",
 			fingerprint: "12345678",
-			expected:    strings.Repeat("a", 253-len("-12345678")) + "-12345678",
+			expected:    strings.Repeat("a", maxLabelValueLen-len("-12345678")) + "-12345678",
 		},
 	}
 
@@ -317,8 +324,8 @@ func TestBuildName(t *testing.T) {
 			if got != tt.expected {
 				t.Errorf("buildName() = %q, want %q", got, tt.expected)
 			}
-			if len(got) > maxNameLen {
-				t.Errorf("name length %d exceeds max %d", len(got), maxNameLen)
+			if len(got) > maxLabelValueLen {
+				t.Errorf("name length %d exceeds max %d", len(got), maxLabelValueLen)
 			}
 		})
 	}

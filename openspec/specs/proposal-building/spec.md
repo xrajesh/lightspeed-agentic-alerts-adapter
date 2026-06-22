@@ -24,9 +24,9 @@ The system SHALL sanitize alert values to conform to Kubernetes naming and label
 - **WHEN** the alertname or namespace contains characters not allowed in DNS subdomain names
 - **THEN** those characters are replaced with hyphens and the result is lowercased
 
-#### Scenario: Proposal name exceeds 253 characters
-- **WHEN** the computed name would exceed 253 characters
-- **THEN** the alertname component is truncated to fit within the limit while preserving the namespace and fingerprint suffix
+#### Scenario: Proposal name exceeds 63 characters
+- **WHEN** the computed name would exceed 63 characters (the Kubernetes label value limit, since the agentic operator uses the Proposal name as a label value)
+- **THEN** the alertname component is truncated to fit within the 63-character limit while preserving the namespace and fingerprint suffix
 
 #### Scenario: Label value exceeds 63 characters
 - **WHEN** an alert field used as a label value exceeds 63 characters
