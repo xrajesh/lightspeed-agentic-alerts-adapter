@@ -15,6 +15,10 @@ The system SHALL read the `alerts-adapter-config` ConfigMap from the adapter's n
 - **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains an unparseable duration string for one or more fields
 - **THEN** the system falls back to the default value for each invalid field and logs a warning for each invalid field
 
+#### Scenario: ConfigMap exists with non-positive duration value
+- **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains a zero or negative duration (e.g., `pollInterval: 0s` or `initialDelay: -1m`)
+- **THEN** the system falls back to the default value for each non-positive field and logs a warning for each non-positive field
+
 #### Scenario: ConfigMap exists with invalid YAML
 - **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains content that is not valid YAML
 - **THEN** the system falls back to all default values and logs a warning

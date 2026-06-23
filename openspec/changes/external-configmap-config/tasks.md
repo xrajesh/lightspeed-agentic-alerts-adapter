@@ -11,7 +11,7 @@
 - [x] 2.1 Define `ConfigSource` interface in `internal/adapter` with `Load(ctx context.Context) config.Config`
 - [x] 2.2 Add `ConfigSource` field to `Adapter` struct and accept it in `New()`
 - [x] 2.3 Update `reconcile()` to call `ConfigSource.Load()` at the start and use the returned values for initialDelay and cooldownWindow
-- [x] 2.4 Update `Run()` to detect pollInterval changes and reset the ticker
+- [x] 2.4 Update `Run()` to detect pollInterval changes, reset the ticker, and log the change with previous and new values
 - [x] 2.5 Update existing adapter tests to supply a mock/stub `ConfigSource`
 
 ## 3. Wiring and manifests
