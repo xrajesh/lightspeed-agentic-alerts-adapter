@@ -28,3 +28,7 @@ spec:
           env:
             - name: ALERTMANAGER_URL
               value: https://alertmanager-main.openshift-monitoring.svc:9094
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace

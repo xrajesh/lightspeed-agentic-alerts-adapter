@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
-	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	"github.com/go-openapi/strfmt"
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 )
 
 type fakeAlertSource struct {
@@ -46,6 +48,18 @@ func (f *fakeProposalClient) CreateProposal(_ context.Context, p *agenticv1alpha
 	}
 	f.created = append(f.created, p)
 	return true, nil
+}
+
+type staticConfigSource struct {
+	cfg config.Config
+}
+
+func (s *staticConfigSource) Load(_ context.Context) config.Config {
+	return s.cfg
+}
+
+func defaultConfigSource() *staticConfigSource {
+	return &staticConfigSource{cfg: config.Default()}
 }
 
 func quietLogger() *slog.Logger {
@@ -265,11 +279,10 @@ func TestReconcile(t *testing.T) {
 			pc := &fakeProposalClient{proposals: tt.proposals, listErr: tt.proposalsErr, createErr: tt.createErr, wasCreated: tt.wasCreated}
 
 			a := &Adapter{
-				alerts:         as,
-				proposals:      pc,
-				initialDelay:   initialDelay,
-				cooldownWindow: cooldownWindow,
-				logger:         quietLogger(),
+				alerts:    as,
+				proposals: pc,
+				config:    defaultConfigSource(),
+				logger:    quietLogger(),
 			}
 
 			a.reconcile(context.Background())
@@ -347,11 +360,10 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 			pc := &fakeProposalClient{}
 
 			a := &Adapter{
-				alerts:         as,
-				proposals:      pc,
-				initialDelay:   initialDelay,
-				cooldownWindow: cooldownWindow,
-				logger:         quietLogger(),
+				alerts:    as,
+				proposals: pc,
+				config:    defaultConfigSource(),
+				logger:    quietLogger(),
 			}
 
 			a.reconcile(context.Background())
@@ -363,17 +375,99 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 	}
 }
 
+func TestReconcileWithTools(t *testing.T) {
+	now := time.Now()
+	oldEnough := now.Add(-10 * time.Minute)
+
+	t.Run("shared tools set on proposal", func(t *testing.T) {
+		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
+		pc := &fakeProposalClient{}
+
+		cfg := config.Default()
+		cfg.Tools.Shared = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+		}
+
+		a := &Adapter{
+			alerts:    as,
+			proposals: pc,
+			config:    &staticConfigSource{cfg: cfg},
+			logger:    quietLogger(),
+		}
+
+		a.reconcile(context.Background())
+
+		if len(pc.created) != 1 {
+			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		}
+		p := pc.created[0]
+		if len(p.Spec.Tools.Skills) != 1 {
+			t.Fatalf("spec.tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
+		}
+		if p.Spec.Tools.Skills[0].Image != "registry.example.com/skills:latest" {
+			t.Errorf("spec.tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/skills:latest")
+		}
+	})
+
+	t.Run("per-step tools set on proposal", func(t *testing.T) {
+		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
+		pc := &fakeProposalClient{}
+
+		cfg := config.Default()
+		cfg.Tools.Analysis = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+		}
+		cfg.Tools.Execution = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+		}
+
+		a := &Adapter{
+			alerts:    as,
+			proposals: pc,
+			config:    &staticConfigSource{cfg: cfg},
+			logger:    quietLogger(),
+		}
+
+		a.reconcile(context.Background())
+
+		if len(pc.created) != 1 {
+			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		}
+		p := pc.created[0]
+		if p.Spec.Tools.IsZero() != true {
+			t.Errorf("expected zero spec.tools, got %+v", p.Spec.Tools)
+		}
+		if len(p.Spec.Analysis.Tools.Skills) != 1 {
+			t.Fatalf("analysis.tools.skills length = %d, want 1", len(p.Spec.Analysis.Tools.Skills))
+		}
+		if p.Spec.Analysis.Tools.Skills[0].Image != "registry.example.com/analysis:latest" {
+			t.Errorf("analysis.tools.skills[0].image = %q, want %q", p.Spec.Analysis.Tools.Skills[0].Image, "registry.example.com/analysis:latest")
+		}
+		if len(p.Spec.Execution.Tools.Skills) != 1 {
+			t.Fatalf("execution.tools.skills length = %d, want 1", len(p.Spec.Execution.Tools.Skills))
+		}
+		if p.Spec.Execution.Tools.Skills[0].Image != "registry.example.com/exec:latest" {
+			t.Errorf("execution.tools.skills[0].image = %q, want %q", p.Spec.Execution.Tools.Skills[0].Image, "registry.example.com/exec:latest")
+		}
+		if !p.Spec.Verification.Tools.IsZero() {
+			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
+		}
+	})
+}
+
 func TestRunExitsOnContextCancel(t *testing.T) {
 	as := &fakeAlertSource{}
 	pc := &fakeProposalClient{}
 
 	a := &Adapter{
-		alerts:         as,
-		proposals:      pc,
-		pollInterval:   time.Hour,
-		initialDelay:   initialDelay,
-		cooldownWindow: cooldownWindow,
-		logger:         quietLogger(),
+		alerts:    as,
+		proposals: pc,
+		config: &staticConfigSource{cfg: config.Config{
+			PollInterval:   time.Hour,
+			InitialDelay:   config.DefaultInitialDelay,
+			CooldownWindow: config.DefaultCooldownWindow,
+		}},
+		logger: quietLogger(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

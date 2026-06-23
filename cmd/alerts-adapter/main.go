@@ -2,13 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/adapter"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/alertmanager"
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/proposal"
 )
 
@@ -29,15 +37,39 @@ func main() {
 		os.Exit(1)
 	}
 
-	propClient, err := proposal.NewClient(logger)
+	k8sClient, err := newClient()
 	if err != nil {
 		logger.Error("fatal error", "error", err)
 		os.Exit(1)
 	}
 
-	a := adapter.New(amClient, propClient, logger)
+	propClient := proposal.NewClient(k8sClient, logger)
+	cfgSource := config.NewConfigMapSource(k8sClient, os.Getenv("POD_NAMESPACE"), logger)
+
+	a := adapter.New(amClient, propClient, cfgSource, logger)
 	if err := a.Run(ctx); err != nil {
 		logger.Error("fatal error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func newClient() (client.Client, error) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("registering core scheme: %w", err)
+	}
+	if err := agenticv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("registering agentic scheme: %w", err)
+	}
+
+	cfg, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("loading kubeconfig: %w", err)
+	}
+
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("creating client: %w", err)
+	}
+	return c, nil
 }

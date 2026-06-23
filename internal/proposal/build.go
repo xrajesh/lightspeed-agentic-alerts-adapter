@@ -13,6 +13,8 @@ import (
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 )
 
 const (
@@ -58,7 +60,7 @@ type requestData struct {
 // The Proposal name is deterministic based on the alert's identity (alertname,
 // namespace, fingerprint), making repeated calls for the same alert safe
 // against duplicate creation via Kubernetes 409 AlreadyExists.
-func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
+func Build(a *models.GettableAlert, tools config.ToolsConfig) (*agenticv1alpha1.Proposal, error) {
 	if a.Fingerprint == nil {
 		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
 	}
@@ -71,6 +73,20 @@ func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
 	request, err := buildRequest(a)
 	if err != nil {
 		return nil, err
+	}
+
+	analysis := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
+	execution := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
+	verification := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
+
+	if len(tools.Analysis) > 0 {
+		analysis.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Analysis}
+	}
+	if len(tools.Execution) > 0 {
+		execution.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Execution}
+	}
+	if len(tools.Verification) > 0 {
+		verification.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Verification}
 	}
 
 	p := &agenticv1alpha1.Proposal{
@@ -86,14 +102,18 @@ func Build(a *models.GettableAlert) (*agenticv1alpha1.Proposal, error) {
 		},
 		Spec: agenticv1alpha1.ProposalSpec{
 			Request:      request,
-			Analysis:     agenticv1alpha1.ProposalStep{Agent: defaultAgent},
-			Execution:    agenticv1alpha1.ProposalStep{Agent: defaultAgent},
-			Verification: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis:     analysis,
+			Execution:    execution,
+			Verification: verification,
 		},
 	}
 
 	if namespace != "" {
 		p.Spec.TargetNamespaces = []string{namespace}
+	}
+
+	if len(tools.Shared) > 0 {
+		p.Spec.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Shared}
 	}
 
 	return p, nil

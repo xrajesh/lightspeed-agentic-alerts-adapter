@@ -1,0 +1,438 @@
+package config
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+func quietLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func TestParseConfigFile(t *testing.T) {
+	tests := []struct {
+		name               string
+		yaml               string
+		wantPollInterval   time.Duration
+		wantInitialDelay   time.Duration
+		wantCooldownWindow time.Duration
+	}{
+		{
+			name:               "valid full config",
+			yaml:               "pollInterval: 45s\ninitialDelay: 10m\ncooldownWindow: 30m\n",
+			wantPollInterval:   45 * time.Second,
+			wantInitialDelay:   10 * time.Minute,
+			wantCooldownWindow: 30 * time.Minute,
+		},
+		{
+			name:               "partial config - only poll interval",
+			yaml:               "pollInterval: 1m\n",
+			wantPollInterval:   time.Minute,
+			wantInitialDelay:   DefaultInitialDelay,
+			wantCooldownWindow: DefaultCooldownWindow,
+		},
+		{
+			name:               "partial config - only cooldown window",
+			yaml:               "cooldownWindow: 2h\n",
+			wantPollInterval:   DefaultPollInterval,
+			wantInitialDelay:   DefaultInitialDelay,
+			wantCooldownWindow: 2 * time.Hour,
+		},
+		{
+			name:               "empty yaml",
+			yaml:               "",
+			wantPollInterval:   DefaultPollInterval,
+			wantInitialDelay:   DefaultInitialDelay,
+			wantCooldownWindow: DefaultCooldownWindow,
+		},
+		{
+			name:               "empty document",
+			yaml:               "---\n",
+			wantPollInterval:   DefaultPollInterval,
+			wantInitialDelay:   DefaultInitialDelay,
+			wantCooldownWindow: DefaultCooldownWindow,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			if cfg.PollInterval != tt.wantPollInterval {
+				t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, tt.wantPollInterval)
+			}
+			if cfg.InitialDelay != tt.wantInitialDelay {
+				t.Errorf("InitialDelay = %v, want %v", cfg.InitialDelay, tt.wantInitialDelay)
+			}
+			if cfg.CooldownWindow != tt.wantCooldownWindow {
+				t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, tt.wantCooldownWindow)
+			}
+		})
+	}
+}
+
+func TestParseConfigFileInvalid(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "invalid yaml",
+			yaml: ":::not yaml:::",
+		},
+		{
+			name: "invalid duration value",
+			yaml: "pollInterval: not-a-duration\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			assertDefaults(t, cfg)
+		})
+	}
+}
+
+func TestNonPositiveDurationsFallBackToDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "zero poll interval",
+			yaml: "pollInterval: 0s",
+		},
+		{
+			name: "negative initial delay",
+			yaml: "initialDelay: -5m",
+		},
+		{
+			name: "negative cooldown window",
+			yaml: "cooldownWindow: -1h",
+		},
+		{
+			name: "all zero",
+			yaml: "pollInterval: 0s\ninitialDelay: 0s\ncooldownWindow: 0s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			assertDefaults(t, cfg)
+		})
+	}
+}
+
+func TestLoadConfigMapNotFound(t *testing.T) {
+	src := newTestSource(t)
+
+	cfg := src.Load(context.Background())
+
+	assertDefaults(t, cfg)
+}
+
+func TestLoadConfigMapMissingKey(t *testing.T) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string]string{
+			"other-key": "value",
+		},
+	}
+	src := newTestSource(t, cm)
+
+	cfg := src.Load(context.Background())
+
+	assertDefaults(t, cfg)
+}
+
+func TestLoadConfigMapEmptyData(t *testing.T) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: defaultNamespace,
+		},
+	}
+	src := newTestSource(t, cm)
+
+	cfg := src.Load(context.Background())
+
+	assertDefaults(t, cfg)
+}
+
+func configMapWith(yamlData string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string]string{
+			configMapDataKey: yamlData,
+		},
+	}
+}
+
+func newTestSource(t *testing.T, objs ...runtime.Object) *ConfigMapSource {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
+	return NewConfigMapSource(c, defaultNamespace, quietLogger())
+}
+
+func assertDefaults(t *testing.T, cfg Config) {
+	t.Helper()
+	defaults := Default()
+	if cfg.PollInterval != defaults.PollInterval {
+		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, defaults.PollInterval)
+	}
+	if cfg.InitialDelay != defaults.InitialDelay {
+		t.Errorf("InitialDelay = %v, want %v", cfg.InitialDelay, defaults.InitialDelay)
+	}
+	if cfg.CooldownWindow != defaults.CooldownWindow {
+		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
+	}
+	assertEmptyTools(t, cfg.Tools)
+}
+
+func assertEmptyTools(t *testing.T, tc ToolsConfig) {
+	t.Helper()
+	if len(tc.Shared) != 0 {
+		t.Errorf("Tools.Shared = %v, want empty", tc.Shared)
+	}
+	if len(tc.Analysis) != 0 {
+		t.Errorf("Tools.Analysis = %v, want empty", tc.Analysis)
+	}
+	if len(tc.Execution) != 0 {
+		t.Errorf("Tools.Execution = %v, want empty", tc.Execution)
+	}
+	if len(tc.Verification) != 0 {
+		t.Errorf("Tools.Verification = %v, want empty", tc.Verification)
+	}
+}
+
+func TestParseToolsConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantTools ToolsConfig
+	}{
+		{
+			name: "shared skills only",
+			yaml: `
+tools:
+  skills:
+    - image: registry.example.com/skills:latest
+      paths:
+        - /skills/prometheus
+`,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+				},
+			},
+		},
+		{
+			name: "per-step skills only",
+			yaml: `
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/analysis:latest
+        paths:
+          - /skills/diagnostic
+execution:
+  tools:
+    skills:
+      - image: registry.example.com/exec:latest
+        paths:
+          - /skills/remediation
+verification:
+  tools:
+    skills:
+      - image: registry.example.com/verify:latest
+        paths:
+          - /skills/validation
+`,
+			wantTools: ToolsConfig{
+				Analysis: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+				},
+				Execution: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+				},
+				Verification: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/verify:latest", Paths: []string{"/skills/validation"}},
+				},
+			},
+		},
+		{
+			name: "shared and per-step skills combined",
+			yaml: `
+tools:
+  skills:
+    - image: registry.example.com/shared:latest
+      paths:
+        - /skills/common
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/analysis:latest
+        paths:
+          - /skills/diagnostic
+`,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/shared:latest", Paths: []string{"/skills/common"}},
+				},
+				Analysis: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+				},
+			},
+		},
+		{
+			name: "multiple skills in shared",
+			yaml: `
+tools:
+  skills:
+    - image: registry.example.com/skills:latest
+      paths:
+        - /skills/prometheus
+        - /skills/cluster-diagnostics
+    - image: registry.example.com/acs:latest
+      paths:
+        - /skills/acs
+`,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus", "/skills/cluster-diagnostics"}},
+					{Image: "registry.example.com/acs:latest", Paths: []string{"/skills/acs"}},
+				},
+			},
+		},
+		{
+			name:      "no tools key",
+			yaml:      "pollInterval: 30s",
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "empty skills list",
+			yaml: `
+tools:
+  skills: []
+`,
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "shared skills entry with empty image skipped",
+			yaml: `
+tools:
+  skills:
+    - image: ""
+      paths:
+        - /skills/prometheus
+`,
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "per-step skills entry with empty paths skipped",
+			yaml: `
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/skills:latest
+        paths: []
+`,
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "mix of valid and invalid entries across levels",
+			yaml: `
+tools:
+  skills:
+    - image: ""
+      paths:
+        - /skills/bad
+    - image: registry.example.com/good:latest
+      paths:
+        - /skills/good
+execution:
+  tools:
+    skills:
+      - image: registry.example.com/no-paths:latest
+        paths: []
+      - image: registry.example.com/exec:latest
+        paths:
+          - /skills/remediation
+`,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/good:latest", Paths: []string{"/skills/good"}},
+				},
+				Execution: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			assertSkillsEqual(t, "Tools.Shared", cfg.Tools.Shared, tt.wantTools.Shared)
+			assertSkillsEqual(t, "Tools.Analysis", cfg.Tools.Analysis, tt.wantTools.Analysis)
+			assertSkillsEqual(t, "Tools.Execution", cfg.Tools.Execution, tt.wantTools.Execution)
+			assertSkillsEqual(t, "Tools.Verification", cfg.Tools.Verification, tt.wantTools.Verification)
+		})
+	}
+}
+
+func assertSkillsEqual(t *testing.T, field string, got, want []agenticv1alpha1.SkillsSource) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d", field, len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Image != w.Image {
+			t.Errorf("%s[%d].image = %q, want %q", field, i, got[i].Image, w.Image)
+		}
+		if len(got[i].Paths) != len(w.Paths) {
+			t.Fatalf("%s[%d].paths length = %d, want %d", field, i, len(got[i].Paths), len(w.Paths))
+		}
+		for j, p := range w.Paths {
+			if got[i].Paths[j] != p {
+				t.Errorf("%s[%d].paths[%d] = %q, want %q", field, i, j, got[i].Paths[j], p)
+			}
+		}
+	}
+}
