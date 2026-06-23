@@ -161,7 +161,7 @@ func (s *ConfigMapSource) parseSkills(entries []skillsEntry) []agenticv1alpha1.S
 			continue
 		}
 		if len(e.Paths) == 0 {
-			s.logger.Warn("skills entry has empty paths, skipping", "index", i, "image", e.Image)
+			s.logger.Warn("skills entry has empty paths, skipping", "index", i)
 			continue
 		}
 		skills = append(skills, agenticv1alpha1.SkillsSource{
