@@ -218,90 +218,186 @@ func assertDefaults(t *testing.T, cfg Config) {
 	if cfg.CooldownWindow != defaults.CooldownWindow {
 		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
 	}
-	if len(cfg.Skills) != 0 {
-		t.Errorf("Skills = %v, want empty", cfg.Skills)
+	assertEmptyTools(t, cfg.Tools)
+}
+
+func assertEmptyTools(t *testing.T, tc ToolsConfig) {
+	t.Helper()
+	if len(tc.Shared) != 0 {
+		t.Errorf("Tools.Shared = %v, want empty", tc.Shared)
+	}
+	if len(tc.Analysis) != 0 {
+		t.Errorf("Tools.Analysis = %v, want empty", tc.Analysis)
+	}
+	if len(tc.Execution) != 0 {
+		t.Errorf("Tools.Execution = %v, want empty", tc.Execution)
+	}
+	if len(tc.Verification) != 0 {
+		t.Errorf("Tools.Verification = %v, want empty", tc.Verification)
 	}
 }
 
-func TestParseSkillsConfig(t *testing.T) {
+func TestParseToolsConfig(t *testing.T) {
 	tests := []struct {
-		name       string
-		yaml       string
-		wantSkills []agenticv1alpha1.SkillsSource
+		name      string
+		yaml      string
+		wantTools ToolsConfig
 	}{
 		{
-			name: "valid single skill",
+			name: "shared skills only",
 			yaml: `
-skills:
-  - image: registry.example.com/skills:latest
-    paths:
-      - /skills/prometheus
+tools:
+  skills:
+    - image: registry.example.com/skills:latest
+      paths:
+        - /skills/prometheus
 `,
-			wantSkills: []agenticv1alpha1.SkillsSource{
-				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+				},
 			},
 		},
 		{
-			name: "valid multiple skills",
+			name: "per-step skills only",
 			yaml: `
-skills:
-  - image: registry.example.com/skills:latest
-    paths:
-      - /skills/prometheus
-      - /skills/cluster-diagnostics
-  - image: registry.example.com/acs:latest
-    paths:
-      - /skills/acs
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/analysis:latest
+        paths:
+          - /skills/diagnostic
+execution:
+  tools:
+    skills:
+      - image: registry.example.com/exec:latest
+        paths:
+          - /skills/remediation
+verification:
+  tools:
+    skills:
+      - image: registry.example.com/verify:latest
+        paths:
+          - /skills/validation
 `,
-			wantSkills: []agenticv1alpha1.SkillsSource{
-				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus", "/skills/cluster-diagnostics"}},
-				{Image: "registry.example.com/acs:latest", Paths: []string{"/skills/acs"}},
+			wantTools: ToolsConfig{
+				Analysis: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+				},
+				Execution: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+				},
+				Verification: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/verify:latest", Paths: []string{"/skills/validation"}},
+				},
 			},
 		},
 		{
-			name:       "no skills key",
-			yaml:       "pollInterval: 30s",
-			wantSkills: nil,
-		},
-		{
-			name:       "empty skills list",
-			yaml:       "skills: []",
-			wantSkills: nil,
-		},
-		{
-			name: "skills entry with empty image skipped",
+			name: "shared and per-step skills combined",
 			yaml: `
-skills:
-  - image: ""
-    paths:
-      - /skills/prometheus
+tools:
+  skills:
+    - image: registry.example.com/shared:latest
+      paths:
+        - /skills/common
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/analysis:latest
+        paths:
+          - /skills/diagnostic
 `,
-			wantSkills: nil,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/shared:latest", Paths: []string{"/skills/common"}},
+				},
+				Analysis: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+				},
+			},
 		},
 		{
-			name: "skills entry with empty paths skipped",
+			name: "multiple skills in shared",
 			yaml: `
-skills:
-  - image: registry.example.com/skills:latest
-    paths: []
+tools:
+  skills:
+    - image: registry.example.com/skills:latest
+      paths:
+        - /skills/prometheus
+        - /skills/cluster-diagnostics
+    - image: registry.example.com/acs:latest
+      paths:
+        - /skills/acs
 `,
-			wantSkills: nil,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus", "/skills/cluster-diagnostics"}},
+					{Image: "registry.example.com/acs:latest", Paths: []string{"/skills/acs"}},
+				},
+			},
 		},
 		{
-			name: "mix of valid and invalid entries",
+			name:      "no tools key",
+			yaml:      "pollInterval: 30s",
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "empty skills list",
 			yaml: `
-skills:
-  - image: ""
-    paths:
-      - /skills/bad
-  - image: registry.example.com/good:latest
-    paths:
-      - /skills/good
-  - image: registry.example.com/no-paths:latest
-    paths: []
+tools:
+  skills: []
 `,
-			wantSkills: []agenticv1alpha1.SkillsSource{
-				{Image: "registry.example.com/good:latest", Paths: []string{"/skills/good"}},
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "shared skills entry with empty image skipped",
+			yaml: `
+tools:
+  skills:
+    - image: ""
+      paths:
+        - /skills/prometheus
+`,
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "per-step skills entry with empty paths skipped",
+			yaml: `
+analysis:
+  tools:
+    skills:
+      - image: registry.example.com/skills:latest
+        paths: []
+`,
+			wantTools: ToolsConfig{},
+		},
+		{
+			name: "mix of valid and invalid entries across levels",
+			yaml: `
+tools:
+  skills:
+    - image: ""
+      paths:
+        - /skills/bad
+    - image: registry.example.com/good:latest
+      paths:
+        - /skills/good
+execution:
+  tools:
+    skills:
+      - image: registry.example.com/no-paths:latest
+        paths: []
+      - image: registry.example.com/exec:latest
+        paths:
+          - /skills/remediation
+`,
+			wantTools: ToolsConfig{
+				Shared: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/good:latest", Paths: []string{"/skills/good"}},
+				},
+				Execution: []agenticv1alpha1.SkillsSource{
+					{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+				},
 			},
 		},
 	}
@@ -313,23 +409,30 @@ skills:
 
 			cfg := src.Load(context.Background())
 
-			if len(cfg.Skills) != len(tt.wantSkills) {
-				t.Fatalf("skills length = %d, want %d", len(cfg.Skills), len(tt.wantSkills))
-			}
-			for i, want := range tt.wantSkills {
-				got := cfg.Skills[i]
-				if got.Image != want.Image {
-					t.Errorf("skills[%d].image = %q, want %q", i, got.Image, want.Image)
-				}
-				if len(got.Paths) != len(want.Paths) {
-					t.Fatalf("skills[%d].paths length = %d, want %d", i, len(got.Paths), len(want.Paths))
-				}
-				for j, p := range want.Paths {
-					if got.Paths[j] != p {
-						t.Errorf("skills[%d].paths[%d] = %q, want %q", i, j, got.Paths[j], p)
-					}
-				}
-			}
+			assertSkillsEqual(t, "Tools.Shared", cfg.Tools.Shared, tt.wantTools.Shared)
+			assertSkillsEqual(t, "Tools.Analysis", cfg.Tools.Analysis, tt.wantTools.Analysis)
+			assertSkillsEqual(t, "Tools.Execution", cfg.Tools.Execution, tt.wantTools.Execution)
+			assertSkillsEqual(t, "Tools.Verification", cfg.Tools.Verification, tt.wantTools.Verification)
 		})
+	}
+}
+
+func assertSkillsEqual(t *testing.T, field string, got, want []agenticv1alpha1.SkillsSource) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d", field, len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Image != w.Image {
+			t.Errorf("%s[%d].image = %q, want %q", field, i, got[i].Image, w.Image)
+		}
+		if len(got[i].Paths) != len(w.Paths) {
+			t.Fatalf("%s[%d].paths length = %d, want %d", field, i, len(got[i].Paths), len(w.Paths))
+		}
+		for j, p := range w.Paths {
+			if got[i].Paths[j] != p {
+				t.Errorf("%s[%d].paths[%d] = %q, want %q", field, i, j, got[i].Paths[j], p)
+			}
+		}
 	}
 }

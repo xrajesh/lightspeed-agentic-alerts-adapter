@@ -8,6 +8,8 @@ import (
 	"github.com/go-openapi/strfmt"
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
 	"github.com/prometheus/alertmanager/api/v2/models"
+
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 )
 
 func strPtr(s string) *string { return &s }
@@ -91,7 +93,7 @@ func TestBuild(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := Build(tt.alert, nil)
+			p, err := Build(tt.alert, config.ToolsConfig{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -130,7 +132,7 @@ func TestBuildNilFingerprint(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 	a.Fingerprint = nil
 
-	_, err := Build(a, nil)
+	_, err := Build(a, config.ToolsConfig{})
 	if err == nil {
 		t.Fatal("expected error for nil fingerprint, got nil")
 	}
@@ -143,7 +145,7 @@ func TestBuildNilFingerprint(t *testing.T) {
 
 func TestBuildWorkflowSteps(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, nil)
+	p, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,11 +164,11 @@ func TestBuildWorkflowSteps(t *testing.T) {
 func TestBuildDeterministicNaming(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical")
 
-	p1, err := Build(a, nil)
+	p1, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("first build: %v", err)
 	}
-	p2, err := Build(a, nil)
+	p2, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("second build: %v", err)
 	}
@@ -179,7 +181,7 @@ func TestBuildDeterministicNaming(t *testing.T) {
 func TestBuildAnnotations(t *testing.T) {
 	t.Run("starts-at is RFC3339 UTC", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a, nil)
+		p, err := Build(a, config.ToolsConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -192,7 +194,7 @@ func TestBuildAnnotations(t *testing.T) {
 
 	t.Run("summary is included", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a, nil)
+		p, err := Build(a, config.ToolsConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -207,7 +209,7 @@ func TestBuildAnnotations(t *testing.T) {
 		startsAt := strfmt.DateTime(time.Time{})
 		a.StartsAt = &startsAt
 
-		p, err := Build(a, nil)
+		p, err := Build(a, config.ToolsConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -223,7 +225,7 @@ func TestBuildAnnotations(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 		a.Annotations["summary"] = strings.Repeat("x", 300)
 
-		p, err := Build(a, nil)
+		p, err := Build(a, config.ToolsConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -237,7 +239,7 @@ func TestBuildRequest(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef12", "critical")
 	a.Annotations["runbook_url"] = "https://runbooks.example.com/KubePodCrashLooping"
 
-	p, err := Build(a, nil)
+	p, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +259,7 @@ func TestBuildRequest(t *testing.T) {
 
 func TestBuildRequestWithoutRunbook(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, nil)
+	p, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -375,7 +377,7 @@ func TestSanitizeLabelValue(t *testing.T) {
 
 func TestBuildTypeMeta(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, nil)
+	p, err := Build(a, config.ToolsConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -388,65 +390,139 @@ func TestBuildTypeMeta(t *testing.T) {
 	}
 }
 
-func TestBuildWithSkills(t *testing.T) {
+func TestBuildWithTools(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 
-	t.Run("nil skills omits tools", func(t *testing.T) {
-		p, err := Build(a, nil)
+	t.Run("empty tools config omits all tools", func(t *testing.T) {
+		p, err := Build(a, config.ToolsConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !p.Spec.Tools.IsZero() {
-			t.Errorf("expected zero tools, got %+v", p.Spec.Tools)
+			t.Errorf("expected zero spec.tools, got %+v", p.Spec.Tools)
+		}
+		if !p.Spec.Analysis.Tools.IsZero() {
+			t.Errorf("expected zero analysis.tools, got %+v", p.Spec.Analysis.Tools)
+		}
+		if !p.Spec.Execution.Tools.IsZero() {
+			t.Errorf("expected zero execution.tools, got %+v", p.Spec.Execution.Tools)
+		}
+		if !p.Spec.Verification.Tools.IsZero() {
+			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
 		}
 	})
 
-	t.Run("empty skills slice omits tools", func(t *testing.T) {
-		p, err := Build(a, []agenticv1alpha1.SkillsSource{})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+	t.Run("shared skills only sets spec.tools", func(t *testing.T) {
+		tc := config.ToolsConfig{
+			Shared: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+			},
 		}
-		if !p.Spec.Tools.IsZero() {
-			t.Errorf("expected zero tools, got %+v", p.Spec.Tools)
-		}
-	})
-
-	t.Run("single skill sets tools", func(t *testing.T) {
-		skills := []agenticv1alpha1.SkillsSource{
-			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
-		}
-		p, err := Build(a, skills)
+		p, err := Build(a, tc)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(p.Spec.Tools.Skills) != 1 {
-			t.Fatalf("tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
+			t.Fatalf("spec.tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
 		}
 		if p.Spec.Tools.Skills[0].Image != "registry.example.com/skills:latest" {
-			t.Errorf("tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/skills:latest")
+			t.Errorf("spec.tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/skills:latest")
 		}
-		if len(p.Spec.Tools.Skills[0].Paths) != 1 || p.Spec.Tools.Skills[0].Paths[0] != "/skills/prometheus" {
-			t.Errorf("tools.skills[0].paths = %v, want [/skills/prometheus]", p.Spec.Tools.Skills[0].Paths)
+		if !p.Spec.Analysis.Tools.IsZero() {
+			t.Errorf("expected zero analysis.tools, got %+v", p.Spec.Analysis.Tools)
+		}
+		if !p.Spec.Execution.Tools.IsZero() {
+			t.Errorf("expected zero execution.tools, got %+v", p.Spec.Execution.Tools)
+		}
+		if !p.Spec.Verification.Tools.IsZero() {
+			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
 		}
 	})
 
-	t.Run("multiple skills sets tools", func(t *testing.T) {
-		skills := []agenticv1alpha1.SkillsSource{
-			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
-			{Image: "registry.example.com/acs-skills:latest", Paths: []string{"/skills/acs", "/skills/cve"}},
+	t.Run("per-step skills only sets step tools", func(t *testing.T) {
+		tc := config.ToolsConfig{
+			Analysis: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+			},
+			Execution: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+			},
+			Verification: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/verify:latest", Paths: []string{"/skills/validation"}},
+			},
 		}
-		p, err := Build(a, skills)
+		p, err := Build(a, tc)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(p.Spec.Tools.Skills) != 2 {
-			t.Fatalf("tools.skills length = %d, want 2", len(p.Spec.Tools.Skills))
+		if !p.Spec.Tools.IsZero() {
+			t.Errorf("expected zero spec.tools, got %+v", p.Spec.Tools)
 		}
-		if p.Spec.Tools.Skills[1].Image != "registry.example.com/acs-skills:latest" {
-			t.Errorf("tools.skills[1].image = %q, want %q", p.Spec.Tools.Skills[1].Image, "registry.example.com/acs-skills:latest")
+		if len(p.Spec.Analysis.Tools.Skills) != 1 {
+			t.Fatalf("analysis.tools.skills length = %d, want 1", len(p.Spec.Analysis.Tools.Skills))
 		}
-		if len(p.Spec.Tools.Skills[1].Paths) != 2 {
-			t.Errorf("tools.skills[1].paths length = %d, want 2", len(p.Spec.Tools.Skills[1].Paths))
+		if p.Spec.Analysis.Tools.Skills[0].Image != "registry.example.com/analysis:latest" {
+			t.Errorf("analysis.tools.skills[0].image = %q, want %q", p.Spec.Analysis.Tools.Skills[0].Image, "registry.example.com/analysis:latest")
+		}
+		if len(p.Spec.Execution.Tools.Skills) != 1 {
+			t.Fatalf("execution.tools.skills length = %d, want 1", len(p.Spec.Execution.Tools.Skills))
+		}
+		if p.Spec.Execution.Tools.Skills[0].Image != "registry.example.com/exec:latest" {
+			t.Errorf("execution.tools.skills[0].image = %q, want %q", p.Spec.Execution.Tools.Skills[0].Image, "registry.example.com/exec:latest")
+		}
+		if len(p.Spec.Verification.Tools.Skills) != 1 {
+			t.Fatalf("verification.tools.skills length = %d, want 1", len(p.Spec.Verification.Tools.Skills))
+		}
+		if p.Spec.Verification.Tools.Skills[0].Image != "registry.example.com/verify:latest" {
+			t.Errorf("verification.tools.skills[0].image = %q, want %q", p.Spec.Verification.Tools.Skills[0].Image, "registry.example.com/verify:latest")
+		}
+	})
+
+	t.Run("shared and per-step skills combined", func(t *testing.T) {
+		tc := config.ToolsConfig{
+			Shared: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/shared:latest", Paths: []string{"/skills/common"}},
+			},
+			Analysis: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+			},
+		}
+		p, err := Build(a, tc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(p.Spec.Tools.Skills) != 1 {
+			t.Fatalf("spec.tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
+		}
+		if p.Spec.Tools.Skills[0].Image != "registry.example.com/shared:latest" {
+			t.Errorf("spec.tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/shared:latest")
+		}
+		if len(p.Spec.Analysis.Tools.Skills) != 1 {
+			t.Fatalf("analysis.tools.skills length = %d, want 1", len(p.Spec.Analysis.Tools.Skills))
+		}
+		if p.Spec.Analysis.Tools.Skills[0].Image != "registry.example.com/analysis:latest" {
+			t.Errorf("analysis.tools.skills[0].image = %q, want %q", p.Spec.Analysis.Tools.Skills[0].Image, "registry.example.com/analysis:latest")
+		}
+		if !p.Spec.Execution.Tools.IsZero() {
+			t.Errorf("expected zero execution.tools, got %+v", p.Spec.Execution.Tools)
+		}
+		if !p.Spec.Verification.Tools.IsZero() {
+			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
+		}
+	})
+
+	t.Run("per-step skills preserves agent", func(t *testing.T) {
+		tc := config.ToolsConfig{
+			Analysis: []agenticv1alpha1.SkillsSource{
+				{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+			},
+		}
+		p, err := Build(a, tc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p.Spec.Analysis.Agent != defaultAgent {
+			t.Errorf("analysis.agent = %q, want %q", p.Spec.Analysis.Agent, defaultAgent)
 		}
 	})
 }

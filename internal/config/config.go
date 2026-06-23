@@ -25,12 +25,20 @@ const (
 	defaultNamespace = "openshift-lightspeed"
 )
 
+// ToolsConfig holds shared and per-step skills configuration.
+type ToolsConfig struct {
+	Shared       []agenticv1alpha1.SkillsSource
+	Analysis     []agenticv1alpha1.SkillsSource
+	Execution    []agenticv1alpha1.SkillsSource
+	Verification []agenticv1alpha1.SkillsSource
+}
+
 // Config holds the adapter's runtime-tunable parameters.
 type Config struct {
 	PollInterval   time.Duration
 	InitialDelay   time.Duration
 	CooldownWindow time.Duration
-	Skills         []agenticv1alpha1.SkillsSource
+	Tools          ToolsConfig
 }
 
 // Default returns a Config with the default values.
@@ -43,10 +51,21 @@ func Default() Config {
 }
 
 type configFile struct {
-	PollInterval   Duration      `yaml:"pollInterval"`
-	InitialDelay   Duration      `yaml:"initialDelay"`
-	CooldownWindow Duration      `yaml:"cooldownWindow"`
-	Skills         []skillsEntry `yaml:"skills"`
+	PollInterval   Duration   `yaml:"pollInterval"`
+	InitialDelay   Duration   `yaml:"initialDelay"`
+	CooldownWindow Duration   `yaml:"cooldownWindow"`
+	Tools          toolsEntry `yaml:"tools"`
+	Analysis       stepEntry  `yaml:"analysis"`
+	Execution      stepEntry  `yaml:"execution"`
+	Verification   stepEntry  `yaml:"verification"`
+}
+
+type toolsEntry struct {
+	Skills []skillsEntry `yaml:"skills"`
+}
+
+type stepEntry struct {
+	Tools toolsEntry `yaml:"tools"`
 }
 
 type skillsEntry struct {
@@ -148,20 +167,25 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 		}
 	}
 
-	cfg.Skills = s.parseSkills(cf.Skills)
+	cfg.Tools = ToolsConfig{
+		Shared:       s.parseSkills(cf.Tools.Skills, "shared"),
+		Analysis:     s.parseSkills(cf.Analysis.Tools.Skills, "analysis"),
+		Execution:    s.parseSkills(cf.Execution.Tools.Skills, "execution"),
+		Verification: s.parseSkills(cf.Verification.Tools.Skills, "verification"),
+	}
 
 	return cfg
 }
 
-func (s *ConfigMapSource) parseSkills(entries []skillsEntry) []agenticv1alpha1.SkillsSource {
+func (s *ConfigMapSource) parseSkills(entries []skillsEntry, step string) []agenticv1alpha1.SkillsSource {
 	var skills []agenticv1alpha1.SkillsSource
-	for i, e := range entries {
+	for _, e := range entries {
 		if e.Image == "" {
-			s.logger.Warn("skills entry has empty image, skipping", "index", i)
+			s.logger.Warn("skills entry missing image, skipping", "step", step)
 			continue
 		}
 		if len(e.Paths) == 0 {
-			s.logger.Warn("skills entry has empty paths, skipping", "index", i)
+			s.logger.Warn("skills entry missing paths, skipping", "step", step)
 			continue
 		}
 		skills = append(skills, agenticv1alpha1.SkillsSource{

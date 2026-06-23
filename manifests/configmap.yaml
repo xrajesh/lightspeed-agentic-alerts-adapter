@@ -20,12 +20,33 @@ data:
     # Default: 1h
     cooldownWindow: 1h
 
-    # skills: OCI images containing skills to mount in the agent's sandbox pod.
-    # Each entry specifies an image and the paths within that image to mount.
-    # When configured, every Proposal created by the adapter will include these
-    # skills in spec.tools.skills. Omit to create Proposals with no tools.
-    # skills:
-    #   - image: registry.redhat.io/openshift-lightspeed/agentic-skills:latest
-    #     paths:
-    #       - /skills/prometheus
-    #       - /skills/cluster-diagnostics
+    # tools: shared skills for all workflow steps (maps to spec.tools on the Proposal).
+    # When configured, every Proposal created by the adapter includes these skills.
+    # Omit to create Proposals with no tools.
+    # tools:
+    #   skills:
+    #     - image: registry.redhat.io/openshift-lightspeed/agentic-skills:latest
+    #       paths:
+    #         - /skills/prometheus
+    #         - /skills/cluster-diagnostics
+
+    # Per-step tool overrides. When set, these replace the shared tools for that
+    # step on the Proposal (maps to spec.{analysis,execution,verification}.tools).
+    # analysis:
+    #   tools:
+    #     skills:
+    #       - image: registry.redhat.io/openshift-lightspeed/analysis-skills:latest
+    #         paths:
+    #           - /skills/diagnostic
+    # execution:
+    #   tools:
+    #     skills:
+    #       - image: registry.redhat.io/openshift-lightspeed/exec-skills:latest
+    #         paths:
+    #           - /skills/remediation
+    # verification:
+    #   tools:
+    #     skills:
+    #       - image: registry.redhat.io/openshift-lightspeed/verify-skills:latest
+    #         paths:
+    #           - /skills/validation

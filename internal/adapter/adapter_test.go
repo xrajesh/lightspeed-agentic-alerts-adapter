@@ -375,6 +375,86 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 	}
 }
 
+func TestReconcileWithTools(t *testing.T) {
+	now := time.Now()
+	oldEnough := now.Add(-10 * time.Minute)
+
+	t.Run("shared tools set on proposal", func(t *testing.T) {
+		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
+		pc := &fakeProposalClient{}
+
+		cfg := config.Default()
+		cfg.Tools.Shared = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
+		}
+
+		a := &Adapter{
+			alerts:    as,
+			proposals: pc,
+			config:    &staticConfigSource{cfg: cfg},
+			logger:    quietLogger(),
+		}
+
+		a.reconcile(context.Background())
+
+		if len(pc.created) != 1 {
+			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		}
+		p := pc.created[0]
+		if len(p.Spec.Tools.Skills) != 1 {
+			t.Fatalf("spec.tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
+		}
+		if p.Spec.Tools.Skills[0].Image != "registry.example.com/skills:latest" {
+			t.Errorf("spec.tools.skills[0].image = %q, want %q", p.Spec.Tools.Skills[0].Image, "registry.example.com/skills:latest")
+		}
+	})
+
+	t.Run("per-step tools set on proposal", func(t *testing.T) {
+		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
+		pc := &fakeProposalClient{}
+
+		cfg := config.Default()
+		cfg.Tools.Analysis = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
+		}
+		cfg.Tools.Execution = []agenticv1alpha1.SkillsSource{
+			{Image: "registry.example.com/exec:latest", Paths: []string{"/skills/remediation"}},
+		}
+
+		a := &Adapter{
+			alerts:    as,
+			proposals: pc,
+			config:    &staticConfigSource{cfg: cfg},
+			logger:    quietLogger(),
+		}
+
+		a.reconcile(context.Background())
+
+		if len(pc.created) != 1 {
+			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		}
+		p := pc.created[0]
+		if p.Spec.Tools.IsZero() != true {
+			t.Errorf("expected zero spec.tools, got %+v", p.Spec.Tools)
+		}
+		if len(p.Spec.Analysis.Tools.Skills) != 1 {
+			t.Fatalf("analysis.tools.skills length = %d, want 1", len(p.Spec.Analysis.Tools.Skills))
+		}
+		if p.Spec.Analysis.Tools.Skills[0].Image != "registry.example.com/analysis:latest" {
+			t.Errorf("analysis.tools.skills[0].image = %q, want %q", p.Spec.Analysis.Tools.Skills[0].Image, "registry.example.com/analysis:latest")
+		}
+		if len(p.Spec.Execution.Tools.Skills) != 1 {
+			t.Fatalf("execution.tools.skills length = %d, want 1", len(p.Spec.Execution.Tools.Skills))
+		}
+		if p.Spec.Execution.Tools.Skills[0].Image != "registry.example.com/exec:latest" {
+			t.Errorf("execution.tools.skills[0].image = %q, want %q", p.Spec.Execution.Tools.Skills[0].Image, "registry.example.com/exec:latest")
+		}
+		if !p.Spec.Verification.Tools.IsZero() {
+			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
+		}
+	})
+}
+
 func TestRunExitsOnContextCancel(t *testing.T) {
 	as := &fakeAlertSource{}
 	pc := &fakeProposalClient{}
