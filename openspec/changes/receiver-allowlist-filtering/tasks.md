@@ -1,6 +1,6 @@
 ## 1. Configuration
 
-- [x] 1.1 Add `AllowedReceivers []string` field to `config.Config` and `DefaultAllowedReceivers` constant `["Critical"]`
+- [x] 1.1 Add `AllowedReceivers []string` field to `config.Config` and `DefaultAllowedReceiver` constant `"critical"`
 - [x] 1.2 Add `allowedReceivers` YAML key to `configFile` struct and parse it in `ConfigMapSource.Load` — default to `["Critical"]` when absent, honour explicit empty list
 - [x] 1.3 Normalize allowlist entries to lowercase at parse time
 - [x] 1.4 Add tests for `allowedReceivers` parsing: present, absent, empty list, ConfigMap missing

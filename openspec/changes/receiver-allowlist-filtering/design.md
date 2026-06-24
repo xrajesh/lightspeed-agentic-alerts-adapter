@@ -38,7 +38,7 @@ The receiver filter runs as the first check in the reconcile loop, before severi
 
 ### Default allowlist: `["Critical"]`
 
-When no `allowedReceivers` key is present in the ConfigMap (or it's empty), the default is `["Critical"]`. This matches the OpenShift default AlertManager configuration where critical alerts are routed to a "Critical" receiver.
+When no `allowedReceivers` key is present in the ConfigMap, the default is `["Critical"]`. When explicitly set to an empty list (`[]`), the adapter processes no alerts. The default matches the OpenShift default AlertManager configuration where critical alerts are routed to a "Critical" receiver.
 
 **Rationale**: Secure-by-default — without explicit configuration, only critical alerts trigger automated remediation. Operators can widen the scope by adding more receivers.
 

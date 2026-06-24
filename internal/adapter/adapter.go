@@ -78,11 +78,18 @@ func (a *Adapter) Run(ctx context.Context) error {
 		case <-ticker.C:
 			a.reconcile(ctx)
 
-			cfg = a.config.Load(ctx)
-			if cfg.PollInterval != currentInterval {
-				a.logger.Info("poll interval changed", "old", currentInterval, "new", cfg.PollInterval)
-				currentInterval = cfg.PollInterval
-				ticker.Reset(currentInterval)
+			newCfg := a.config.Load(ctx)
+			if !configEqual(cfg, newCfg) {
+				a.logger.Info("config reloaded",
+					"pollInterval", newCfg.PollInterval,
+					"initialDelay", newCfg.InitialDelay,
+					"cooldownWindow", newCfg.CooldownWindow,
+					"allowedReceivers", newCfg.AllowedReceivers,
+				)
+				if newCfg.PollInterval != cfg.PollInterval {
+					ticker.Reset(newCfg.PollInterval)
+				}
+				cfg = newCfg
 			}
 		}
 	}
@@ -329,6 +336,13 @@ func isTerminal(phase agenticv1alpha1.ProposalPhase) bool {
 		return true
 	}
 	return false
+}
+
+func configEqual(a, b config.Config) bool {
+	return a.PollInterval == b.PollInterval &&
+		a.InitialDelay == b.InitialDelay &&
+		a.CooldownWindow == b.CooldownWindow &&
+		slices.Equal(a.AllowedReceivers, b.AllowedReceivers)
 }
 
 func fingerprintPrefix(alert *models.GettableAlert) string {
