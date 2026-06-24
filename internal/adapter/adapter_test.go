@@ -81,6 +81,7 @@ func makeAlertWithSeverity(name, fingerprint string, startsAt time.Time, severit
 	return &models.GettableAlert{
 		Fingerprint: &fingerprint,
 		StartsAt:    &sa,
+		Receivers:   []*models.Receiver{{Name: ptr("Critical")}},
 		Alert: models.Alert{
 			Labels: labels,
 		},
@@ -240,10 +241,11 @@ func TestReconcile(t *testing.T) {
 			wantCreateCalls: 2,
 		},
 		{
-			name:        "nil startsAt skips alert",
-			alerts:      models.GettableAlerts{
+			name: "nil startsAt skips alert",
+			alerts: models.GettableAlerts{
 				{
 					Fingerprint: ptr("abcdef1234567890"),
+					Receivers:   []*models.Receiver{{Name: ptr("Critical")}},
 					Alert: models.Alert{
 						Labels: models.LabelSet{"alertname": "HighCPU"},
 					},
@@ -262,7 +264,8 @@ func TestReconcile(t *testing.T) {
 			name: "nil fingerprint alert skipped with build error",
 			alerts: models.GettableAlerts{
 				{
-					StartsAt: func() *strfmt.DateTime { dt := strfmt.DateTime(oldEnough); return &dt }(),
+					StartsAt:  func() *strfmt.DateTime { dt := strfmt.DateTime(oldEnough); return &dt }(),
+					Receivers: []*models.Receiver{{Name: ptr("Critical")}},
 					Alert: models.Alert{
 						Labels: models.LabelSet{"alertname": "HighCPU"},
 					},
@@ -328,6 +331,7 @@ func TestSkipSeverity(t *testing.T) {
 
 	t.Run("missing severity label is not skipped", func(t *testing.T) {
 		alert := &models.GettableAlert{
+			Receivers: []*models.Receiver{{Name: ptr("Critical")}},
 			Alert: models.Alert{
 				Labels: models.LabelSet{"alertname": "TestAlert"},
 			},
@@ -336,6 +340,91 @@ func TestSkipSeverity(t *testing.T) {
 			t.Error("skipSeverity() = true for missing severity label, want false")
 		}
 	})
+}
+
+func TestSkipReceiver(t *testing.T) {
+	tests := []struct {
+		name      string
+		receivers []*models.Receiver
+		allowed   []string
+		want      bool
+	}{
+		{
+			name:      "matching receiver",
+			receivers: []*models.Receiver{{Name: ptr("Critical")}},
+			allowed:   []string{"critical"},
+			want:      false,
+		},
+		{
+			name:      "no matching receiver",
+			receivers: []*models.Receiver{{Name: ptr("Default")}},
+			allowed:   []string{"critical"},
+			want:      true,
+		},
+		{
+			name:      "one of multiple receivers matches",
+			receivers: []*models.Receiver{{Name: ptr("Default")}, {Name: ptr("Critical")}},
+			allowed:   []string{"critical"},
+			want:      false,
+		},
+		{
+			name:      "case-insensitive match",
+			receivers: []*models.Receiver{{Name: ptr("CRITICAL")}},
+			allowed:   []string{"critical"},
+			want:      false,
+		},
+		{
+			name:      "empty receivers list",
+			receivers: []*models.Receiver{},
+			allowed:   []string{"critical"},
+			want:      true,
+		},
+		{
+			name:      "nil receivers",
+			receivers: nil,
+			allowed:   []string{"critical"},
+			want:      true,
+		},
+		{
+			name:      "empty allowlist skips all",
+			receivers: []*models.Receiver{{Name: ptr("Critical")}},
+			allowed:   []string{},
+			want:      true,
+		},
+		{
+			name:      "multiple allowed receivers",
+			receivers: []*models.Receiver{{Name: ptr("PagerDuty")}},
+			allowed:   []string{"critical", "pagerduty"},
+			want:      false,
+		},
+		{
+			name:      "nil receiver entry skipped",
+			receivers: []*models.Receiver{nil, {Name: ptr("Critical")}},
+			allowed:   []string{"critical"},
+			want:      false,
+		},
+		{
+			name:      "nil receiver name skipped",
+			receivers: []*models.Receiver{{Name: nil}, {Name: ptr("Critical")}},
+			allowed:   []string{"critical"},
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			alert := &models.GettableAlert{
+				Receivers: tt.receivers,
+				Alert: models.Alert{
+					Labels: models.LabelSet{"alertname": "TestAlert"},
+				},
+			}
+			got := skipReceiver(alert, tt.allowed)
+			if got != tt.want {
+				t.Errorf("skipReceiver() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestReconcileSkipsSeverity(t *testing.T) {
@@ -463,9 +552,10 @@ func TestRunExitsOnContextCancel(t *testing.T) {
 		alerts:    as,
 		proposals: pc,
 		config: &staticConfigSource{cfg: config.Config{
-			PollInterval:   time.Hour,
-			InitialDelay:   config.DefaultInitialDelay,
-			CooldownWindow: config.DefaultCooldownWindow,
+			PollInterval:     time.Hour,
+			InitialDelay:     config.DefaultInitialDelay,
+			CooldownWindow:   config.DefaultCooldownWindow,
+			AllowedReceivers: []string{config.DefaultAllowedReceiver},
 		}},
 		logger: quietLogger(),
 	}

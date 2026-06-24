@@ -218,6 +218,7 @@ func assertDefaults(t *testing.T, cfg Config) {
 	if cfg.CooldownWindow != defaults.CooldownWindow {
 		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
 	}
+	assertReceiversEqual(t, cfg.AllowedReceivers, defaults.AllowedReceivers)
 	assertEmptyTools(t, cfg.Tools)
 }
 
@@ -414,6 +415,71 @@ execution:
 			assertSkillsEqual(t, "Tools.Execution", cfg.Tools.Execution, tt.wantTools.Execution)
 			assertSkillsEqual(t, "Tools.Verification", cfg.Tools.Verification, tt.wantTools.Verification)
 		})
+	}
+}
+
+func TestParseAllowedReceivers(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want []string
+	}{
+		{
+			name: "single receiver",
+			yaml: "allowedReceivers:\n  - Critical\n",
+			want: []string{"critical"},
+		},
+		{
+			name: "multiple receivers",
+			yaml: "allowedReceivers:\n  - Critical\n  - PagerDuty\n",
+			want: []string{"critical", "pagerduty"},
+		},
+		{
+			name: "mixed case normalized to lowercase",
+			yaml: "allowedReceivers:\n  - CRITICAL\n  - Slack-OnCall\n",
+			want: []string{"critical", "slack-oncall"},
+		},
+		{
+			name: "field absent defaults to critical",
+			yaml: "pollInterval: 30s\n",
+			want: []string{DefaultAllowedReceiver},
+		},
+		{
+			name: "explicit empty list",
+			yaml: "allowedReceivers: []\n",
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cm := configMapWith(tt.yaml)
+			src := newTestSource(t, cm)
+
+			cfg := src.Load(context.Background())
+
+			assertReceiversEqual(t, cfg.AllowedReceivers, tt.want)
+		})
+	}
+}
+
+func TestAllowedReceiversDefaultsOnMissingConfigMap(t *testing.T) {
+	src := newTestSource(t)
+
+	cfg := src.Load(context.Background())
+
+	assertReceiversEqual(t, cfg.AllowedReceivers, []string{DefaultAllowedReceiver})
+}
+
+func assertReceiversEqual(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("AllowedReceivers length = %d, want %d (got %v)", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("AllowedReceivers[%d] = %q, want %q", i, got[i], w)
+		}
 	}
 }
 

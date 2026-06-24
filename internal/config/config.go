@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
@@ -19,6 +20,8 @@ const (
 	DefaultPollInterval   = 30 * time.Second
 	DefaultInitialDelay   = 5 * time.Minute
 	DefaultCooldownWindow = 1 * time.Hour
+
+	DefaultAllowedReceiver = "critical"
 
 	configMapName    = "alerts-adapter-config"
 	configMapDataKey = "config.yaml"
@@ -35,29 +38,32 @@ type ToolsConfig struct {
 
 // Config holds the adapter's runtime-tunable parameters.
 type Config struct {
-	PollInterval   time.Duration
-	InitialDelay   time.Duration
-	CooldownWindow time.Duration
-	Tools          ToolsConfig
+	PollInterval     time.Duration
+	InitialDelay     time.Duration
+	CooldownWindow   time.Duration
+	AllowedReceivers []string
+	Tools            ToolsConfig
 }
 
 // Default returns a Config with the default values.
 func Default() Config {
 	return Config{
-		PollInterval:   DefaultPollInterval,
-		InitialDelay:   DefaultInitialDelay,
-		CooldownWindow: DefaultCooldownWindow,
+		PollInterval:     DefaultPollInterval,
+		InitialDelay:     DefaultInitialDelay,
+		CooldownWindow:   DefaultCooldownWindow,
+		AllowedReceivers: []string{DefaultAllowedReceiver},
 	}
 }
 
 type configFile struct {
-	PollInterval   Duration   `yaml:"pollInterval"`
-	InitialDelay   Duration   `yaml:"initialDelay"`
-	CooldownWindow Duration   `yaml:"cooldownWindow"`
-	Tools          toolsEntry `yaml:"tools"`
-	Analysis       stepEntry  `yaml:"analysis"`
-	Execution      stepEntry  `yaml:"execution"`
-	Verification   stepEntry  `yaml:"verification"`
+	PollInterval     Duration         `yaml:"pollInterval"`
+	InitialDelay     Duration         `yaml:"initialDelay"`
+	CooldownWindow   Duration         `yaml:"cooldownWindow"`
+	AllowedReceivers *[]string        `yaml:"allowedReceivers"`
+	Tools            toolsEntry       `yaml:"tools"`
+	Analysis         stepEntry        `yaml:"analysis"`
+	Execution        stepEntry        `yaml:"execution"`
+	Verification     stepEntry        `yaml:"verification"`
 }
 
 type toolsEntry struct {
@@ -165,6 +171,14 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 		} else {
 			s.logger.Warn("cooldownWindow must be positive, using default", "value", cf.CooldownWindow.Duration)
 		}
+	}
+
+	if cf.AllowedReceivers != nil {
+		normalized := make([]string, 0, len(*cf.AllowedReceivers))
+		for _, r := range *cf.AllowedReceivers {
+			normalized = append(normalized, strings.ToLower(r))
+		}
+		cfg.AllowedReceivers = normalized
 	}
 
 	cfg.Tools = ToolsConfig{
