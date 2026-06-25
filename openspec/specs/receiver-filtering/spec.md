@@ -1,5 +1,7 @@
-## ADDED Requirements
+## Purpose
+Filter alerts based on a configurable allowlist of AlertManager receivers, ensuring only alerts routed to approved receivers are processed for Proposal creation.
 
+## Requirements
 ### Requirement: Skip alerts not routed to an allowed receiver
 The system SHALL skip any alert whose AlertManager receivers do not include at least one entry from the configured `allowedReceivers` list. Comparison SHALL be case-insensitive.
 

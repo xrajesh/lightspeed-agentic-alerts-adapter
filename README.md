@@ -50,11 +50,64 @@ The adapter runs as a single-replica Deployment in the `openshift-lightspeed` na
 |---|---|---|
 | `ALERTMANAGER_URL` | `https://alertmanager-main.openshift-monitoring.svc:9094` | AlertManager API endpoint |
 
-Internal polling parameters (constants in `internal/adapter/adapter.go`):
+### ConfigMap
 
-- **Poll interval**: 30s
-- **Initial delay**: 5 min (minimum time an alert must fire before a Proposal is created)
-- **Cooldown window**: 1 hour (minimum time after a terminal Proposal before retrying)
+Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap in the `openshift-lightspeed` namespace (key: `config.yaml`). Changes are picked up on the next poll cycle — no restart required. If the ConfigMap is missing or malformed, defaults are used.
+
+| Field | Default | Description |
+|---|---|---|
+| `pollInterval` | `30s` | How often to poll AlertManager |
+| `initialDelay` | `5m` | Minimum time an alert must fire before a Proposal is created |
+| `cooldownWindow` | `1h` | Minimum time after a terminal Proposal before retrying the same alert |
+| `allowedReceivers` | `["critical"]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Set to an empty list to disable filtering |
+
+#### Tools / Skills
+
+Skills (OCI images with runbook paths) can be configured at a shared level or per Proposal step (`analysis`, `execution`, `verification`). Per-step skills override shared skills for that step.
+
+| Field | Description |
+|---|---|
+| `tools.skills` | Shared skills applied to all steps |
+| `analysis.tools.skills` | Skills for the analysis step only |
+| `execution.tools.skills` | Skills for the execution step only |
+| `verification.tools.skills` | Skills for the verification step only |
+
+Each skills entry requires `image` (OCI image reference) and `paths` (list of paths within the image).
+
+#### Example ConfigMap
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alerts-adapter-config
+  namespace: openshift-lightspeed
+data:
+  config.yaml: |
+    pollInterval: "45s"
+    initialDelay: "10m"
+    cooldownWindow: "2h"
+    allowedReceivers:
+      - critical
+      - warning
+    tools:
+      skills:
+        - image: quay.io/example/shared-runbooks:latest
+          paths:
+            - /runbooks/common
+    analysis:
+      tools:
+        skills:
+          - image: quay.io/example/analysis-runbooks:latest
+            paths:
+              - /runbooks/analysis
+    execution:
+      tools:
+        skills:
+          - image: quay.io/example/exec-runbooks:latest
+            paths:
+              - /runbooks/exec
+```
 
 ## Documentation
 

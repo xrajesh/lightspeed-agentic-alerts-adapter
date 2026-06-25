@@ -3,11 +3,11 @@ Continuously poll AlertManager for firing alerts and create Proposal CRs for new
 
 ## Requirements
 ### Requirement: Poll AlertManager on a fixed interval
-The system SHALL poll AlertManager every 30 seconds for firing alerts and process each alert against the deduplication rules.
+The system SHALL poll AlertManager every 30 seconds for firing alerts and process each alert against the filtering and deduplication rules. The filter order SHALL be: receiver allowlist → severity → initial delay → active proposal → cooldown.
 
 #### Scenario: Normal poll cycle
 - **WHEN** the poll interval elapses
-- **THEN** the system fetches alerts from AlertManager, lists existing Proposals, applies dedup rules, and creates Proposals for qualifying alerts
+- **THEN** the system fetches alerts from AlertManager, lists existing Proposals, applies receiver filtering then dedup rules, and creates Proposals for qualifying alerts
 
 #### Scenario: AlertManager unreachable during poll
 - **WHEN** the AlertManager API returns an error during a poll cycle
