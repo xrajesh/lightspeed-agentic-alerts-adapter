@@ -88,23 +88,25 @@ The adapter maintains a **1:1 relationship** between alerts and Proposals. Each 
 The adapter runs a single loop:
 
 ```
-every 30 seconds:
+every <pollInterval> (default 30s):
     1. GET /api/v2/alerts?active=true&silenced=false&inhibited=false → firing alerts
     2. LIST Proposals (label: source=alertmanager) → existing proposals
     3. For each firing alert:
-        a. now - alert.startsAt < INITIAL_DELAY?        → skip (too transient)
-        b. Active Proposal with same fingerprint?        → skip (already handling)
-        c. Terminal Proposal within COOLDOWN_WINDOW?     → skip (too soon to retry)
-        d. Else → CREATE Proposal
+        a. Receivers not in allowedReceivers?               → skip (not routed to allowed receiver)
+        b. Severity is "none" or "info"?                    → skip (low severity)
+        c. now - alert.startsAt < initialDelay?             → skip (too transient)
+        d. Active Proposal with same fingerprint?           → skip (already handling)
+        e. Terminal Proposal within cooldownWindow?         → skip (too soon to retry)
+        f. Else → CREATE Proposal
 ```
 
-**Poll interval**: 30 seconds (constant). The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
+**Poll interval**: 30 seconds by default, configurable via ConfigMap. The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
 
 The query parameters ensure the adapter only processes alerts that are actively firing and not suppressed by AlertManager's silencing or inhibition rules.
 
 ### Deduplication
 
-Two configurable parameters control deduplication. Both are defined as Go constants initially, with a path to make them configurable via CR or ConfigMap.
+Two configurable parameters control deduplication. Both are configurable via the `alerts-adapter-config` ConfigMap, with the defaults shown below.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -338,28 +340,42 @@ subjects:
 
 ## Configuration
 
-All configurable values are Go constants in the initial implementation. Future iterations will move them to a CR or ConfigMap.
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ALERTMANAGER_URL` | `https://alertmanager-main.openshift-monitoring.svc:9094` | AlertManager API endpoint |
+| `POD_NAMESPACE` | `openshift-lightspeed` | Namespace for ConfigMap lookup (set via downward API in the deployment manifest) |
+
+### ConfigMap
+
+Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap (key: `config.yaml`) in the adapter's namespace on every poll cycle. Changes take effect on the next cycle — no restart required. If the ConfigMap is missing or malformed, defaults are used.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `pollInterval` | `30s` | How often to poll AlertManager |
+| `initialDelay` | `5m` | Alert must fire this long before creating a Proposal |
+| `cooldownWindow` | `1h` | Minimum time after a terminal Proposal before re-proposing for the same alert |
+| `allowedReceivers` | `["critical"]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive) |
+
+Tools/skills configuration is also supported — see [README.md](README.md#configuration) for the full ConfigMap example including shared and per-step skills.
+
+### Constants
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `PollInterval` | `30 * time.Second` | How often to poll AlertManager |
-| `InitialDelay` | `5 * time.Minute` | Alert must fire this long before creating a Proposal |
-| `CooldownWindow` | `1 * time.Hour` | Minimum time after a terminal Proposal before re-proposing for the same alert |
-| `AlertManagerURL` | `https://alertmanager-main.openshift-monitoring.svc:9094` | AlertManager API base URL |
 | `DefaultNamespace` | `openshift-lightspeed` | Namespace for Proposals from cluster-scoped alerts (no namespace label) |
 | `DefaultAgent` | `default` | Agent name for analysis, execution, and verification steps |
 
 ## Future Work
 
-- **AlertManager-aware filtering**: Leverage AlertManager's silencing, inhibition, and grouping features to reduce noise. The adapter currently reads all firing alerts regardless of their AM status. Future iterations could filter by alert state (`active` vs `suppressed`), respect silence rules, and use grouping metadata to create a single Proposal per alert group instead of per individual alert.
+- **AlertManager-aware filtering**: Leverage AlertManager's grouping features to reduce noise. The adapter already filters out silenced and inhibited alerts via query parameters, but does not use grouping metadata. Future iterations could create a single Proposal per alert group instead of per individual alert.
 - **Custom fingerprinting and alert grouping**: Consider replacing AlertManager's fingerprint (hash of all labels) with a custom fingerprint computed from a chosen subset of labels. This could potentially enable custom alert grouping to handle alert storms — e.g., multiple related alerts might map to a single Proposal instead of creating one per alert. A custom fingerprint would also decouple the adapter from AlertManager's fingerprint format, making it easier to switch to other alert sources (e.g., Thanos Ruler) in the future. To be evaluated based on real-world usage patterns.
-- **Configurable parameters**: Move constants to a CRD or ConfigMap (poll interval, initial delay, cooldown, AlertManager URL, agent names).
 - **Per-alert-group configuration**: Allow a configuration resource (ConfigMap or CRD) to define customized settings per alert group — including initial delay, cooldown window, workflow pattern (full remediation / advisory / assisted), and prompt template. This would enable different handling strategies for different classes of alerts (e.g., shorter delay for critical infrastructure alerts, advisory-only for capacity warnings).
-- **Alert filtering**: Opt-in via alert labels, severity-based filtering, or configurable label selectors.
+- **Label-selector alert filtering**: The adapter currently filters by receiver allowlist and severity. A future iteration could add configurable label selectors for more fine-grained alert filtering.
 - **Prometheus metrics**: `alerts_adapter_polls_total`, `proposals_created_total`, `errors_total`, `poll_duration_seconds`.
 - **Adapter-specific analysis output schema**: Inject custom fields into `analysisOutput.schema` for alert correlation, affected services topology.
 - **Workflow selection**: Choose different workflow patterns (advisory, assisted, full remediation) based on alert labels.
 - **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic Proposal naming, concurrent replicas attempting to create the same Proposal would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
-- **RunbookURL enrichment**: Bubble up the `RunbookURL` label value from alerts into the Proposal context. All critical OpenShift alerts have a runbook URL that provides hints to the model on how to remediate or troubleshoot the alert cause.
 - **Token budgets**: Protect against alert storms hitting model rate limits. At minimum add jitter to Proposal creation; consider an adapter-level or OLS-level token budget to prevent runaway costs.
 - **Retry clarity for unparseable alerts**: When an alert cannot be parsed, the adapter skips it but will keep retrying on each subsequent poll until the alert disappears. Consider explicit retry-on-next-interval semantics with backoff or a skip list.
