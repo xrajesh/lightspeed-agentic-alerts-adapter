@@ -5,6 +5,7 @@ package adapter
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,7 +57,12 @@ func New(alerts AlertSource, proposals ProposalClient, cfg ConfigSource, logger 
 // Run starts the poll loop, blocking until the context is cancelled.
 func (a *Adapter) Run(ctx context.Context) error {
 	cfg := a.config.Load(ctx)
-	a.logger.Info("adapter started", "pollInterval", cfg.PollInterval, "initialDelay", cfg.InitialDelay, "cooldownWindow", cfg.CooldownWindow)
+	a.logger.Info("adapter started",
+		"pollInterval", cfg.PollInterval,
+		"initialDelay", cfg.InitialDelay,
+		"cooldownWindow", cfg.CooldownWindow,
+		"allowedReceivers", cfg.AllowedReceivers,
+	)
 
 	a.reconcile(ctx)
 
@@ -72,11 +78,18 @@ func (a *Adapter) Run(ctx context.Context) error {
 		case <-ticker.C:
 			a.reconcile(ctx)
 
-			cfg = a.config.Load(ctx)
-			if cfg.PollInterval != currentInterval {
-				a.logger.Info("poll interval changed", "old", currentInterval, "new", cfg.PollInterval)
-				currentInterval = cfg.PollInterval
-				ticker.Reset(currentInterval)
+			newCfg := a.config.Load(ctx)
+			if !configEqual(cfg, newCfg) {
+				a.logger.Info("config reloaded",
+					"pollInterval", newCfg.PollInterval,
+					"initialDelay", newCfg.InitialDelay,
+					"cooldownWindow", newCfg.CooldownWindow,
+					"allowedReceivers", newCfg.AllowedReceivers,
+				)
+				if newCfg.PollInterval != cfg.PollInterval {
+					ticker.Reset(newCfg.PollInterval)
+				}
+				cfg = newCfg
 			}
 		}
 	}
@@ -114,6 +127,16 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			fingerprint = *alert.Fingerprint
 		}
 		alertName := alert.Labels["alertname"]
+
+		if skipReceiver(alert, cfg.AllowedReceivers) {
+			a.logger.Debug("alert skipped: no matching receiver",
+				"alertname", alertName,
+				"fingerprint", fingerprint,
+				"receivers", receiverNames(alert),
+			)
+			skipped++
+			continue
+		}
 
 		if skipSeverity(alert) {
 			a.logger.Debug("alert skipped: low severity",
@@ -191,6 +214,28 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		"skipped", skipped,
 		"created", created,
 	)
+}
+
+func skipReceiver(alert *models.GettableAlert, allowed []string) bool {
+	for _, r := range alert.Receivers {
+		if r == nil || r.Name == nil {
+			continue
+		}
+		if slices.Contains(allowed, strings.ToLower(*r.Name)) {
+			return false
+		}
+	}
+	return true
+}
+
+func receiverNames(alert *models.GettableAlert) []string {
+	names := make([]string, 0, len(alert.Receivers))
+	for _, r := range alert.Receivers {
+		if r != nil && r.Name != nil {
+			names = append(names, *r.Name)
+		}
+	}
+	return names
 }
 
 func skipSeverity(alert *models.GettableAlert) bool {
@@ -291,6 +336,13 @@ func isTerminal(phase agenticv1alpha1.ProposalPhase) bool {
 		return true
 	}
 	return false
+}
+
+func configEqual(a, b config.Config) bool {
+	return a.PollInterval == b.PollInterval &&
+		a.InitialDelay == b.InitialDelay &&
+		a.CooldownWindow == b.CooldownWindow &&
+		slices.Equal(a.AllowedReceivers, b.AllowedReceivers)
 }
 
 func fingerprintPrefix(alert *models.GettableAlert) string {
