@@ -440,9 +440,9 @@ func TestParseAllowedReceivers(t *testing.T) {
 			want: []string{"critical", "slack-oncall"},
 		},
 		{
-			name: "field absent defaults to critical",
+			name: "field absent defaults to empty",
 			yaml: "pollInterval: 30s\n",
-			want: []string{DefaultAllowedReceiver},
+			want: nil,
 		},
 		{
 			name: "explicit empty list",
@@ -468,7 +468,7 @@ func TestAllowedReceiversDefaultsOnMissingConfigMap(t *testing.T) {
 
 	cfg := src.Load(context.Background())
 
-	assertReceiversEqual(t, cfg.AllowedReceivers, []string{DefaultAllowedReceiver})
+	assertReceiversEqual(t, cfg.AllowedReceivers, nil)
 }
 
 func assertReceiversEqual(t *testing.T, got, want []string) {

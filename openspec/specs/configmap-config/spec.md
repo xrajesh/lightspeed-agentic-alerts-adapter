@@ -45,10 +45,11 @@ The system SHALL use the following default values when no ConfigMap is present o
 - `pollInterval`: 30 seconds
 - `initialDelay`: 5 minutes
 - `cooldownWindow`: 1 hour
+- `allowedReceivers`: empty list (no alerts are processed until explicitly configured)
 
 #### Scenario: All defaults applied
 - **WHEN** no ConfigMap exists
-- **THEN** the system uses `pollInterval=30s`, `initialDelay=5m`, `cooldownWindow=1h`
+- **THEN** the system uses `pollInterval=30s`, `initialDelay=5m`, `cooldownWindow=1h`, `allowedReceivers=[]`
 
 ### Requirement: Resolve the adapter namespace from the environment
 The system SHALL read the `POD_NAMESPACE` environment variable to determine the namespace for the ConfigMap. If the variable is not set, it SHALL fall back to `openshift-lightspeed`.

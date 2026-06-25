@@ -21,8 +21,6 @@ const (
 	DefaultInitialDelay   = 5 * time.Minute
 	DefaultCooldownWindow = 1 * time.Hour
 
-	DefaultAllowedReceiver = "critical"
-
 	configMapName    = "alerts-adapter-config"
 	configMapDataKey = "config.yaml"
 	defaultNamespace = "openshift-lightspeed"
@@ -51,7 +49,7 @@ func Default() Config {
 		PollInterval:     DefaultPollInterval,
 		InitialDelay:     DefaultInitialDelay,
 		CooldownWindow:   DefaultCooldownWindow,
-		AllowedReceivers: []string{DefaultAllowedReceiver},
+		AllowedReceivers: nil,
 	}
 }
 

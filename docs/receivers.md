@@ -36,7 +36,7 @@ This means the routing decisions already made by AlertManager — based on label
 
 ### Default behavior
 
-When no `allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to `["critical"]`. This means only alerts routed to the `Critical` receiver produce Proposals out of the box.
+When no `allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to an empty list. This means no alerts produce Proposals until receivers are explicitly configured in the ConfigMap.
 
 ### Configuration
 
@@ -57,7 +57,7 @@ data:
 
 Key behaviors:
 
-- **Field absent** — uses the default `["critical"]`.
+- **Field absent** — uses the default empty list (no alerts are processed).
 - **Explicit empty list (`[]`)** — disables all Proposal creation; no alerts are processed.
 - **Case-insensitive** — `"Critical"`, `"critical"`, and `"CRITICAL"` all match the same receiver.
 - **Multiple receivers** — an alert passes if *any* of its receivers appears in the allowlist.

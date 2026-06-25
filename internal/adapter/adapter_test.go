@@ -58,10 +58,6 @@ func (s *staticConfigSource) Load(_ context.Context) config.Config {
 	return s.cfg
 }
 
-func defaultConfigSource() *staticConfigSource {
-	return &staticConfigSource{cfg: config.Default()}
-}
-
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -284,7 +280,12 @@ func TestReconcile(t *testing.T) {
 			a := &Adapter{
 				alerts:    as,
 				proposals: pc,
-				config:    defaultConfigSource(),
+				config: &staticConfigSource{cfg: config.Config{
+					PollInterval:     config.DefaultPollInterval,
+					InitialDelay:     config.DefaultInitialDelay,
+					CooldownWindow:   config.DefaultCooldownWindow,
+					AllowedReceivers: []string{"critical"},
+				}},
 				logger:    quietLogger(),
 			}
 
@@ -451,7 +452,12 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 			a := &Adapter{
 				alerts:    as,
 				proposals: pc,
-				config:    defaultConfigSource(),
+				config: &staticConfigSource{cfg: config.Config{
+					PollInterval:     config.DefaultPollInterval,
+					InitialDelay:     config.DefaultInitialDelay,
+					CooldownWindow:   config.DefaultCooldownWindow,
+					AllowedReceivers: []string{"critical"},
+				}},
 				logger:    quietLogger(),
 			}
 
@@ -473,6 +479,7 @@ func TestReconcileWithTools(t *testing.T) {
 		pc := &fakeProposalClient{}
 
 		cfg := config.Default()
+		cfg.AllowedReceivers = []string{"critical"}
 		cfg.Tools.Shared = []agenticv1alpha1.SkillsSource{
 			{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
 		}
@@ -503,6 +510,7 @@ func TestReconcileWithTools(t *testing.T) {
 		pc := &fakeProposalClient{}
 
 		cfg := config.Default()
+		cfg.AllowedReceivers = []string{"critical"}
 		cfg.Tools.Analysis = []agenticv1alpha1.SkillsSource{
 			{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
 		}
@@ -555,7 +563,7 @@ func TestRunExitsOnContextCancel(t *testing.T) {
 			PollInterval:     time.Hour,
 			InitialDelay:     config.DefaultInitialDelay,
 			CooldownWindow:   config.DefaultCooldownWindow,
-			AllowedReceivers: []string{config.DefaultAllowedReceiver},
+			AllowedReceivers: []string{"critical"},
 		}},
 		logger: quietLogger(),
 	}

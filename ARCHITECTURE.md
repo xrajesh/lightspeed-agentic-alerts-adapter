@@ -356,7 +356,7 @@ Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap (
 | `pollInterval` | `30s` | How often to poll AlertManager |
 | `initialDelay` | `5m` | Alert must fire this long before creating a Proposal |
 | `cooldownWindow` | `1h` | Minimum time after a terminal Proposal before re-proposing for the same alert |
-| `allowedReceivers` | `["critical"]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive) |
+| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no proposals are created until receivers are explicitly configured |
 
 Tools/skills configuration is also supported — see [README.md](README.md#configuration) for the full ConfigMap example including shared and per-step skills.
 

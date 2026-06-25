@@ -34,7 +34,7 @@ The system SHALL read the `allowedReceivers` field from the `alerts-adapter-conf
 
 #### Scenario: Receivers field absent from ConfigMap
 - **WHEN** the ConfigMap exists but does not contain an `allowedReceivers` key
-- **THEN** the system uses the default allowlist `["Critical"]`
+- **THEN** the system uses the default empty allowlist and no alerts are processed
 
 #### Scenario: Receivers field is empty list
 - **WHEN** the ConfigMap contains `allowedReceivers: []`
@@ -42,14 +42,14 @@ The system SHALL read the `allowedReceivers` field from the `alerts-adapter-conf
 
 #### Scenario: ConfigMap not found
 - **WHEN** the `alerts-adapter-config` ConfigMap does not exist
-- **THEN** the system uses the default allowlist `["Critical"]`
+- **THEN** the system uses the default empty allowlist and no alerts are processed
 
 ### Requirement: Log the active receiver allowlist
 The system SHALL log the effective `allowedReceivers` list at Info level at startup and when the configuration is reloaded.
 
 #### Scenario: Startup with default receivers
 - **WHEN** the adapter starts and no ConfigMap overrides the receivers
-- **THEN** the system logs the default allowlist `["Critical"]` at Info level
+- **THEN** the system logs the default empty allowlist at Info level
 
 #### Scenario: Startup with custom receivers
 - **WHEN** the adapter starts and the ConfigMap sets `allowedReceivers: ["Critical", "PagerDuty"]`
