@@ -112,6 +112,7 @@ data:
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — design rationale, requirements, deployment model, and future work
+- [docs/receivers.md](docs/receivers.md) — what AlertManager receivers are and how the adapter uses them for filtering
 - [openspec/specs/](openspec/specs/) — detailed specs for each subsystem, managed with the [OpenSpec](https://github.com/Fission-AI/OpenSpec) framework
 
 ## License
