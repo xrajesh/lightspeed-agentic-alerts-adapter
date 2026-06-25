@@ -52,7 +52,6 @@ data:
   config.yaml: |
     allowedReceivers:
       - critical
-      - pagerduty
 ```
 
 Key behaviors:
