@@ -12,6 +12,7 @@ make fmt            # go fmt ./...
 make vet            # go vet ./...
 make coverage       # HTML coverage report → coverage.html
 make container-build # podman build
+make container-push  # podman build + push (set IMAGE_NAME, IMAGE_TAG defaults to latest)
 
 # Run a single test
 go test -run TestFunctionName ./internal/adapter/
