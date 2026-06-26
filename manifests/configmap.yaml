@@ -19,6 +19,8 @@ data:
     # same alert fingerprint. Prevents flooding for flapping alerts.
     # Default: 1h
     cooldownWindow: 1h
+    allowedReceivers:
+     - critical
 
     # tools: shared skills for all workflow steps (maps to spec.tools on the Proposal).
     # When configured, every Proposal created by the adapter includes these skills.

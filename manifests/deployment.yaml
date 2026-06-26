@@ -18,7 +18,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: adapter
-          image: quay.io/openshift-lightspeed/lightspeed-agentic-alerts-adapter:latest
+          image: quay.io/openshiftanalytics/lightspeed-agentic-alerts-adapter:latest
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
