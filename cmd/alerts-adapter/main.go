@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,6 +28,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	cfg := config.LoadFromFile(config.DefaultConfigPath, logger)
+
 	amClient, err := alertmanager.New(alertmanager.Config{
 		URL: os.Getenv("ALERTMANAGER_URL"),
 	})
@@ -44,9 +45,8 @@ func main() {
 	}
 
 	propClient := proposal.NewClient(k8sClient, logger)
-	cfgSource := config.NewConfigMapSource(k8sClient, os.Getenv("POD_NAMESPACE"), logger)
 
-	a := adapter.New(amClient, propClient, cfgSource, logger)
+	a := adapter.New(amClient, propClient, cfg, logger)
 	if err := a.Run(ctx); err != nil {
 		logger.Error("fatal error", "error", err)
 		os.Exit(1)
@@ -55,9 +55,6 @@ func main() {
 
 func newClient() (client.Client, error) {
 	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("registering core scheme: %w", err)
-	}
 	if err := agenticv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("registering agentic scheme: %w", err)
 	}
