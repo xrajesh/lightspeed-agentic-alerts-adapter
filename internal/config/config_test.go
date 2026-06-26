@@ -1,24 +1,31 @@
 package config
 
 import (
-	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestParseConfigFile(t *testing.T) {
+func writeConfigFile(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+	return path
+}
+
+func TestLoadFromFile(t *testing.T) {
 	tests := []struct {
 		name               string
 		yaml               string
@@ -65,10 +72,9 @@ func TestParseConfigFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cm := configMapWith(tt.yaml)
-			src := newTestSource(t, cm)
+			path := writeConfigFile(t, tt.yaml)
 
-			cfg := src.Load(context.Background())
+			cfg := LoadFromFile(path, quietLogger())
 
 			if cfg.PollInterval != tt.wantPollInterval {
 				t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, tt.wantPollInterval)
@@ -83,7 +89,7 @@ func TestParseConfigFile(t *testing.T) {
 	}
 }
 
-func TestParseConfigFileInvalid(t *testing.T) {
+func TestLoadFromFileInvalid(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
@@ -100,10 +106,9 @@ func TestParseConfigFileInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cm := configMapWith(tt.yaml)
-			src := newTestSource(t, cm)
+			path := writeConfigFile(t, tt.yaml)
 
-			cfg := src.Load(context.Background())
+			cfg := LoadFromFile(path, quietLogger())
 
 			assertDefaults(t, cfg)
 		})
@@ -135,75 +140,19 @@ func TestNonPositiveDurationsFallBackToDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cm := configMapWith(tt.yaml)
-			src := newTestSource(t, cm)
+			path := writeConfigFile(t, tt.yaml)
 
-			cfg := src.Load(context.Background())
+			cfg := LoadFromFile(path, quietLogger())
 
 			assertDefaults(t, cfg)
 		})
 	}
 }
 
-func TestLoadConfigMapNotFound(t *testing.T) {
-	src := newTestSource(t)
-
-	cfg := src.Load(context.Background())
+func TestLoadFromFileMissing(t *testing.T) {
+	cfg := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
 
 	assertDefaults(t, cfg)
-}
-
-func TestLoadConfigMapMissingKey(t *testing.T) {
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: defaultNamespace,
-		},
-		Data: map[string]string{
-			"other-key": "value",
-		},
-	}
-	src := newTestSource(t, cm)
-
-	cfg := src.Load(context.Background())
-
-	assertDefaults(t, cfg)
-}
-
-func TestLoadConfigMapEmptyData(t *testing.T) {
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: defaultNamespace,
-		},
-	}
-	src := newTestSource(t, cm)
-
-	cfg := src.Load(context.Background())
-
-	assertDefaults(t, cfg)
-}
-
-func configMapWith(yamlData string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: defaultNamespace,
-		},
-		Data: map[string]string{
-			configMapDataKey: yamlData,
-		},
-	}
-}
-
-func newTestSource(t *testing.T, objs ...runtime.Object) *ConfigMapSource {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add corev1 to scheme: %v", err)
-	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
-	return NewConfigMapSource(c, defaultNamespace, quietLogger())
 }
 
 func assertDefaults(t *testing.T, cfg Config) {
@@ -405,10 +354,9 @@ execution:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cm := configMapWith(tt.yaml)
-			src := newTestSource(t, cm)
+			path := writeConfigFile(t, tt.yaml)
 
-			cfg := src.Load(context.Background())
+			cfg := LoadFromFile(path, quietLogger())
 
 			assertSkillsEqual(t, "Tools.Shared", cfg.Tools.Shared, tt.wantTools.Shared)
 			assertSkillsEqual(t, "Tools.Analysis", cfg.Tools.Analysis, tt.wantTools.Analysis)
@@ -453,20 +401,17 @@ func TestParseAllowedReceivers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cm := configMapWith(tt.yaml)
-			src := newTestSource(t, cm)
+			path := writeConfigFile(t, tt.yaml)
 
-			cfg := src.Load(context.Background())
+			cfg := LoadFromFile(path, quietLogger())
 
 			assertReceiversEqual(t, cfg.AllowedReceivers, tt.want)
 		})
 	}
 }
 
-func TestAllowedReceiversDefaultsOnMissingConfigMap(t *testing.T) {
-	src := newTestSource(t)
-
-	cfg := src.Load(context.Background())
+func TestAllowedReceiversDefaultsOnMissingFile(t *testing.T) {
+	cfg := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
 
 	assertReceiversEqual(t, cfg.AllowedReceivers, nil)
 }

@@ -28,46 +28,39 @@ type ProposalClient interface {
 	CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) (bool, error)
 }
 
-// ConfigSource provides runtime configuration for each poll cycle.
-type ConfigSource interface {
-	Load(ctx context.Context) config.Config
-}
-
 // Adapter polls AlertManager for firing alerts and creates Proposal CRs,
 // applying stateless deduplication (initial delay, active-proposal check,
 // and cooldown window) on each cycle.
 type Adapter struct {
 	alerts    AlertSource
 	proposals ProposalClient
-	config    ConfigSource
+	cfg       config.Config
 	logger    *slog.Logger
 }
 
 // New creates an Adapter with the given alert source, proposal client,
-// config source, and logger.
-func New(alerts AlertSource, proposals ProposalClient, cfg ConfigSource, logger *slog.Logger) *Adapter {
+// config, and logger.
+func New(alerts AlertSource, proposals ProposalClient, cfg config.Config, logger *slog.Logger) *Adapter {
 	return &Adapter{
 		alerts:    alerts,
 		proposals: proposals,
-		config:    cfg,
+		cfg:       cfg,
 		logger:    logger,
 	}
 }
 
 // Run starts the poll loop, blocking until the context is cancelled.
 func (a *Adapter) Run(ctx context.Context) error {
-	cfg := a.config.Load(ctx)
 	a.logger.Info("adapter started",
-		"pollInterval", cfg.PollInterval,
-		"initialDelay", cfg.InitialDelay,
-		"cooldownWindow", cfg.CooldownWindow,
-		"allowedReceivers", cfg.AllowedReceivers,
+		"pollInterval", a.cfg.PollInterval,
+		"initialDelay", a.cfg.InitialDelay,
+		"cooldownWindow", a.cfg.CooldownWindow,
+		"allowedReceivers", a.cfg.AllowedReceivers,
 	)
 
 	a.reconcile(ctx)
 
-	currentInterval := cfg.PollInterval
-	ticker := time.NewTicker(currentInterval)
+	ticker := time.NewTicker(a.cfg.PollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -77,28 +70,12 @@ func (a *Adapter) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			a.reconcile(ctx)
-
-			newCfg := a.config.Load(ctx)
-			if !configEqual(cfg, newCfg) {
-				a.logger.Info("config reloaded",
-					"pollInterval", newCfg.PollInterval,
-					"initialDelay", newCfg.InitialDelay,
-					"cooldownWindow", newCfg.CooldownWindow,
-					"allowedReceivers", newCfg.AllowedReceivers,
-				)
-				if newCfg.PollInterval != cfg.PollInterval {
-					ticker.Reset(newCfg.PollInterval)
-				}
-				cfg = newCfg
-			}
 		}
 	}
 }
 
 func (a *Adapter) reconcile(ctx context.Context) {
 	a.logger.Debug("poll cycle start")
-
-	cfg := a.config.Load(ctx)
 
 	alerts, err := a.alerts.GetAlerts(ctx)
 	if err != nil {
@@ -128,7 +105,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		}
 		alertName := alert.Labels["alertname"]
 
-		if skipReceiver(alert, cfg.AllowedReceivers) {
+		if skipReceiver(alert, a.cfg.AllowedReceivers) {
 			a.logger.Debug("alert skipped: no matching receiver",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -148,12 +125,12 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if skipInitialDelay(alert, now, cfg.InitialDelay) {
+		if skipInitialDelay(alert, now, a.cfg.InitialDelay) {
 			a.logger.Debug("alert skipped: initial delay",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
 				"startsAt", alert.StartsAt,
-				"threshold", cfg.InitialDelay,
+				"threshold", a.cfg.InitialDelay,
 			)
 			skipped++
 			continue
@@ -168,17 +145,17 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if inCooldown(alert, proposals, now, cfg.CooldownWindow) {
+		if inCooldown(alert, proposals, now, a.cfg.CooldownWindow) {
 			a.logger.Debug("alert skipped: cooldown window",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
-				"cooldown", cfg.CooldownWindow,
+				"cooldown", a.cfg.CooldownWindow,
 			)
 			skipped++
 			continue
 		}
 
-		p, err := proposal.Build(alert, cfg.Tools)
+		p, err := proposal.Build(alert, a.cfg.Tools)
 		if err != nil {
 			a.logger.Error("failed to build proposal",
 				"alertname", alertName,
@@ -336,13 +313,6 @@ func isTerminal(phase agenticv1alpha1.ProposalPhase) bool {
 		return true
 	}
 	return false
-}
-
-func configEqual(a, b config.Config) bool {
-	return a.PollInterval == b.PollInterval &&
-		a.InitialDelay == b.InitialDelay &&
-		a.CooldownWindow == b.CooldownWindow &&
-		slices.Equal(a.AllowedReceivers, b.AllowedReceivers)
 }
 
 func fingerprintPrefix(alert *models.GettableAlert) string {

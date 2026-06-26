@@ -21,32 +21,6 @@ subjects:
     name: lightspeed-agentic-alerts-adapter
     namespace: openshift-lightspeed
 ---
-# Config: read the alerts-adapter-config ConfigMap for runtime settings.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: lightspeed-agentic-alerts-adapter-config
-  namespace: openshift-lightspeed
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    resourceNames: ["alerts-adapter-config"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: lightspeed-agentic-alerts-adapter-config
-  namespace: openshift-lightspeed
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: lightspeed-agentic-alerts-adapter-config
-subjects:
-  - kind: ServiceAccount
-    name: lightspeed-agentic-alerts-adapter
-    namespace: openshift-lightspeed
----
 # AlertManager: read firing alerts from the monitoring stack.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

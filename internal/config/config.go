@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,10 +8,6 @@ import (
 	"time"
 
 	agenticv1alpha1 "github.com/openshift/lightspeed-agentic-operator/api/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -21,9 +16,7 @@ const (
 	DefaultInitialDelay   = 5 * time.Minute
 	DefaultCooldownWindow = 1 * time.Hour
 
-	configMapName    = "alerts-adapter-config"
-	configMapDataKey = "config.yaml"
-	defaultNamespace = "openshift-lightspeed"
+	DefaultConfigPath = "/etc/alerts-adapter/config.yaml"
 )
 
 // ToolsConfig holds shared and per-step skills configuration.
@@ -97,55 +90,20 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// ConfigMapSource reads configuration from a Kubernetes ConfigMap.
-type ConfigMapSource struct {
-	client    client.Reader
-	namespace string
-	logger    *slog.Logger
-}
-
-// NewConfigMapSource creates a ConfigMapSource that reads the alerts-adapter-config
-// ConfigMap from the given namespace. If namespace is empty, it reads POD_NAMESPACE
-// from the environment, falling back to openshift-lightspeed.
-func NewConfigMapSource(c client.Reader, namespace string, logger *slog.Logger) *ConfigMapSource {
-	if namespace == "" {
-		namespace = os.Getenv("POD_NAMESPACE")
-	}
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-	return &ConfigMapSource{
-		client:    c,
-		namespace: namespace,
-		logger:    logger,
-	}
-}
-
-// Load reads the ConfigMap and returns the current configuration.
-// It never returns an error — on any failure it falls back to defaults.
-func (s *ConfigMapSource) Load(ctx context.Context) Config {
+// LoadFromFile reads configuration from a YAML file at the given path.
+// It never returns an error — on any failure it falls back to defaults and logs.
+func LoadFromFile(path string, logger *slog.Logger) Config {
 	cfg := Default()
 
-	var cm corev1.ConfigMap
-	key := types.NamespacedName{Name: configMapName, Namespace: s.namespace}
-	if err := s.client.Get(ctx, key, &cm); err != nil {
-		if apierrors.IsNotFound(err) {
-			s.logger.Info("config ConfigMap not found, using defaults", "name", configMapName, "namespace", s.namespace)
-		} else {
-			s.logger.Warn("failed to read config ConfigMap, using defaults", "error", err)
-		}
-		return cfg
-	}
-
-	data, ok := cm.Data[configMapDataKey]
-	if !ok {
-		s.logger.Info("config ConfigMap missing config.yaml key, using defaults", "name", configMapName)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logger.Error("failed to read config file, using defaults", "path", path, "error", err)
 		return cfg
 	}
 
 	var cf configFile
-	if err := yaml.Unmarshal([]byte(data), &cf); err != nil {
-		s.logger.Warn("failed to parse config.yaml, using defaults", "error", err)
+	if err := yaml.Unmarshal(data, &cf); err != nil {
+		logger.Error("failed to parse config file, using defaults", "path", path, "error", err)
 		return cfg
 	}
 
@@ -153,21 +111,21 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 		if cf.PollInterval.Duration > 0 {
 			cfg.PollInterval = cf.PollInterval.Duration
 		} else {
-			s.logger.Warn("pollInterval must be positive, using default", "value", cf.PollInterval.Duration)
+			logger.Error("pollInterval must be positive, using default", "value", cf.PollInterval.Duration)
 		}
 	}
 	if cf.InitialDelay.isSet {
 		if cf.InitialDelay.Duration > 0 {
 			cfg.InitialDelay = cf.InitialDelay.Duration
 		} else {
-			s.logger.Warn("initialDelay must be positive, using default", "value", cf.InitialDelay.Duration)
+			logger.Error("initialDelay must be positive, using default", "value", cf.InitialDelay.Duration)
 		}
 	}
 	if cf.CooldownWindow.isSet {
 		if cf.CooldownWindow.Duration > 0 {
 			cfg.CooldownWindow = cf.CooldownWindow.Duration
 		} else {
-			s.logger.Warn("cooldownWindow must be positive, using default", "value", cf.CooldownWindow.Duration)
+			logger.Error("cooldownWindow must be positive, using default", "value", cf.CooldownWindow.Duration)
 		}
 	}
 
@@ -180,24 +138,24 @@ func (s *ConfigMapSource) Load(ctx context.Context) Config {
 	}
 
 	cfg.Tools = ToolsConfig{
-		Shared:       s.parseSkills(cf.Tools.Skills, "shared"),
-		Analysis:     s.parseSkills(cf.Analysis.Tools.Skills, "analysis"),
-		Execution:    s.parseSkills(cf.Execution.Tools.Skills, "execution"),
-		Verification: s.parseSkills(cf.Verification.Tools.Skills, "verification"),
+		Shared:       parseSkills(cf.Tools.Skills, "shared", logger),
+		Analysis:     parseSkills(cf.Analysis.Tools.Skills, "analysis", logger),
+		Execution:    parseSkills(cf.Execution.Tools.Skills, "execution", logger),
+		Verification: parseSkills(cf.Verification.Tools.Skills, "verification", logger),
 	}
 
 	return cfg
 }
 
-func (s *ConfigMapSource) parseSkills(entries []skillsEntry, step string) []agenticv1alpha1.SkillsSource {
+func parseSkills(entries []skillsEntry, step string, logger *slog.Logger) []agenticv1alpha1.SkillsSource {
 	var skills []agenticv1alpha1.SkillsSource
 	for _, e := range entries {
 		if e.Image == "" {
-			s.logger.Warn("skills entry missing image, skipping", "step", step)
+			logger.Warn("skills entry missing image, skipping", "step", step)
 			continue
 		}
 		if len(e.Paths) == 0 {
-			s.logger.Warn("skills entry missing paths, skipping", "step", step)
+			logger.Warn("skills entry missing paths, skipping", "step", step)
 			continue
 		}
 		skills = append(skills, agenticv1alpha1.SkillsSource{

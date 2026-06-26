@@ -50,19 +50,20 @@ func (f *fakeProposalClient) CreateProposal(_ context.Context, p *agenticv1alpha
 	return true, nil
 }
 
-type staticConfigSource struct {
-	cfg config.Config
-}
-
-func (s *staticConfigSource) Load(_ context.Context) config.Config {
-	return s.cfg
-}
-
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func defaultTestConfig() config.Config {
+	return config.Config{
+		PollInterval:     config.DefaultPollInterval,
+		InitialDelay:     config.DefaultInitialDelay,
+		CooldownWindow:   config.DefaultCooldownWindow,
+		AllowedReceivers: []string{"critical"},
+	}
+}
 
 func makeAlert(name, fingerprint string, startsAt time.Time) *models.GettableAlert {
 	return makeAlertWithSeverity(name, fingerprint, startsAt, "warning")
@@ -280,12 +281,7 @@ func TestReconcile(t *testing.T) {
 			a := &Adapter{
 				alerts:    as,
 				proposals: pc,
-				config: &staticConfigSource{cfg: config.Config{
-					PollInterval:     config.DefaultPollInterval,
-					InitialDelay:     config.DefaultInitialDelay,
-					CooldownWindow:   config.DefaultCooldownWindow,
-					AllowedReceivers: []string{"critical"},
-				}},
+				cfg:       defaultTestConfig(),
 				logger:    quietLogger(),
 			}
 
@@ -452,12 +448,7 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 			a := &Adapter{
 				alerts:    as,
 				proposals: pc,
-				config: &staticConfigSource{cfg: config.Config{
-					PollInterval:     config.DefaultPollInterval,
-					InitialDelay:     config.DefaultInitialDelay,
-					CooldownWindow:   config.DefaultCooldownWindow,
-					AllowedReceivers: []string{"critical"},
-				}},
+				cfg:       defaultTestConfig(),
 				logger:    quietLogger(),
 			}
 
@@ -487,7 +478,7 @@ func TestReconcileWithTools(t *testing.T) {
 		a := &Adapter{
 			alerts:    as,
 			proposals: pc,
-			config:    &staticConfigSource{cfg: cfg},
+			cfg:       cfg,
 			logger:    quietLogger(),
 		}
 
@@ -521,7 +512,7 @@ func TestReconcileWithTools(t *testing.T) {
 		a := &Adapter{
 			alerts:    as,
 			proposals: pc,
-			config:    &staticConfigSource{cfg: cfg},
+			cfg:       cfg,
 			logger:    quietLogger(),
 		}
 
@@ -556,16 +547,14 @@ func TestRunExitsOnContextCancel(t *testing.T) {
 	as := &fakeAlertSource{}
 	pc := &fakeProposalClient{}
 
+	cfg := defaultTestConfig()
+	cfg.PollInterval = time.Hour
+
 	a := &Adapter{
 		alerts:    as,
 		proposals: pc,
-		config: &staticConfigSource{cfg: config.Config{
-			PollInterval:     time.Hour,
-			InitialDelay:     config.DefaultInitialDelay,
-			CooldownWindow:   config.DefaultCooldownWindow,
-			AllowedReceivers: []string{"critical"},
-		}},
-		logger: quietLogger(),
+		cfg:       cfg,
+		logger:    quietLogger(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

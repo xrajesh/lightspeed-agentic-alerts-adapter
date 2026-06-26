@@ -100,7 +100,7 @@ every <pollInterval> (default 30s):
         f. Else → CREATE Proposal
 ```
 
-**Poll interval**: 30 seconds by default, configurable via ConfigMap. The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
+**Poll interval**: 30 seconds by default, configurable via ConfigMap. The poll interval is fixed for the lifetime of the process; changes require a pod restart (triggered by the operator). The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
 
 The query parameters ensure the adapter only processes alerts that are actively firing and not suppressed by AlertManager's silencing or inhibition rules.
 
@@ -270,9 +270,17 @@ spec:
         app: lightspeed-agentic-alerts-adapter
     spec:
       serviceAccountName: lightspeed-agentic-alerts-adapter
+      volumes:
+        - name: config
+          configMap:
+            name: alerts-adapter-config
       containers:
         - name: adapter
           image: quay.io/openshift-lightspeed/lightspeed-agentic-alerts-adapter:latest
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alerts-adapter
+              readOnly: true
           env:
             - name: ALERTMANAGER_URL
               value: https://alertmanager-main.openshift-monitoring.svc:9094
@@ -345,11 +353,11 @@ subjects:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ALERTMANAGER_URL` | `https://alertmanager-main.openshift-monitoring.svc:9094` | AlertManager API endpoint |
-| `POD_NAMESPACE` | `openshift-lightspeed` | Namespace for ConfigMap lookup (set via downward API in the deployment manifest) |
+| `POD_NAMESPACE` | `openshift-lightspeed` | Adapter's namespace (set via downward API in the deployment manifest) |
 
 ### ConfigMap
 
-Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap (key: `config.yaml`) in the adapter's namespace on every poll cycle. Changes take effect on the next cycle — no restart required. If the ConfigMap is missing or malformed, defaults are used.
+The `alerts-adapter-config` ConfigMap is mounted as a volume at `/etc/alerts-adapter/` and read once at startup from the `config.yaml` key. If the file is missing or malformed, defaults are used. The operator watches the ConfigMap and restarts the adapter pod when the config changes.
 
 | Field | Default | Description |
 |-------|---------|-------------|
