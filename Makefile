@@ -11,7 +11,7 @@ LDFLAGS ?=
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT = $(shell which golangci-lint 2>/dev/null)
 
-.PHONY: all build test clean lint fmt vet run coverage container-build help install-lint
+.PHONY: all build test clean lint fmt vet run coverage container-build container-push help install-lint
 
 all: build
 
@@ -48,6 +48,9 @@ coverage:
 container-build:
 	podman build -t $(IMAGE_NAME):$(IMAGE_TAG) -f Containerfile .
 
+container-push: container-build
+	podman push $(IMAGE_NAME):$(IMAGE_TAG)
+
 help:
 	@echo "Targets:"
 	@echo "  build           - Build the binary"
@@ -59,4 +62,5 @@ help:
 	@echo "  run             - Build and run the binary"
 	@echo "  coverage        - Generate test coverage report"
 	@echo "  container-build - Build container image"
+	@echo "  container-push  - Build and push container image (set IMAGE_NAME; IMAGE_TAG defaults to latest)"
 	@echo "  help            - Show this help"

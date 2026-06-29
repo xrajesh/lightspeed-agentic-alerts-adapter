@@ -33,8 +33,11 @@ make run
 ### Container
 
 ```sh
-make container-build
+make container-build IMAGE_NAME=quay.io/your-org/lightspeed-agentic-alerts-adapter
+make container-push  IMAGE_NAME=quay.io/your-org/lightspeed-agentic-alerts-adapter
 ```
+
+`container-push` depends on `container-build` — it builds and pushes in one step. `IMAGE_TAG` defaults to `latest`.
 
 ### Deploy to OpenShift
 
