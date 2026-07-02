@@ -169,6 +169,9 @@ func assertDefaults(t *testing.T, cfg Config) {
 	}
 	assertReceiversEqual(t, cfg.AllowedReceivers, defaults.AllowedReceivers)
 	assertEmptyTools(t, cfg.Tools)
+	if cfg.Agent != (AgentConfig{}) {
+		t.Errorf("Agent = %+v, want zero value", cfg.Agent)
+	}
 }
 
 func assertEmptyTools(t *testing.T, tc ToolsConfig) {
@@ -425,6 +428,91 @@ func assertReceiversEqual(t *testing.T, got, want []string) {
 		if got[i] != w {
 			t.Errorf("AllowedReceivers[%d] = %q, want %q", i, got[i], w)
 		}
+	}
+}
+
+func TestParseAgentConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantAgent AgentConfig
+	}{
+		{
+			name: "global default agent only",
+			yaml: `
+agent:
+  default: "my-agent"
+`,
+			wantAgent: AgentConfig{Default: "my-agent"},
+		},
+		{
+			name: "per-step agents only",
+			yaml: `
+agent:
+  analysis: "analyzer"
+  execution: "executor"
+  verification: "verifier"
+`,
+			wantAgent: AgentConfig{
+				Analysis:     "analyzer",
+				Execution:    "executor",
+				Verification: "verifier",
+			},
+		},
+		{
+			name: "global and per-step agents mixed",
+			yaml: `
+agent:
+  default: "global-agent"
+  analysis: "analyzer"
+`,
+			wantAgent: AgentConfig{
+				Default:  "global-agent",
+				Analysis: "analyzer",
+			},
+		},
+		{
+			name:      "no agent section",
+			yaml:      "pollInterval: 30s",
+			wantAgent: AgentConfig{},
+		},
+		{
+			name: "agent section with empty strings",
+			yaml: `
+agent:
+  default: ""
+  analysis: ""
+`,
+			wantAgent: AgentConfig{},
+		},
+		{
+			name: "full agent config",
+			yaml: `
+agent:
+  default: "my-agent"
+  analysis: "analyzer"
+  execution: "executor"
+  verification: "verifier"
+`,
+			wantAgent: AgentConfig{
+				Default:      "my-agent",
+				Analysis:     "analyzer",
+				Execution:    "executor",
+				Verification: "verifier",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfigFile(t, tt.yaml)
+
+			cfg := LoadFromFile(path, quietLogger())
+
+			if cfg.Agent != tt.wantAgent {
+				t.Errorf("Agent = %+v, want %+v", cfg.Agent, tt.wantAgent)
+			}
+		})
 	}
 }
 

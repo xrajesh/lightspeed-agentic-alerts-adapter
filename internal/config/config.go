@@ -19,6 +19,14 @@ const (
 	DefaultConfigPath = "/etc/alerts-adapter/config.yaml"
 )
 
+// AgentConfig holds the agent name overrides for Proposal workflow steps.
+type AgentConfig struct {
+	Default      string
+	Analysis     string
+	Execution    string
+	Verification string
+}
+
 // ToolsConfig holds shared and per-step skills configuration.
 type ToolsConfig struct {
 	Shared       []agenticv1alpha1.SkillsSource
@@ -34,6 +42,7 @@ type Config struct {
 	CooldownWindow   time.Duration
 	AllowedReceivers []string
 	Tools            ToolsConfig
+	Agent            AgentConfig
 }
 
 // Default returns a Config with the default values.
@@ -55,6 +64,14 @@ type configFile struct {
 	Analysis         stepEntry        `yaml:"analysis"`
 	Execution        stepEntry        `yaml:"execution"`
 	Verification     stepEntry        `yaml:"verification"`
+	Agent            agentEntry       `yaml:"agent"`
+}
+
+type agentEntry struct {
+	Default      string `yaml:"default"`
+	Analysis     string `yaml:"analysis"`
+	Execution    string `yaml:"execution"`
+	Verification string `yaml:"verification"`
 }
 
 type toolsEntry struct {
@@ -142,6 +159,13 @@ func LoadFromFile(path string, logger *slog.Logger) Config {
 		Analysis:     parseSkills(cf.Analysis.Tools.Skills, "analysis", logger),
 		Execution:    parseSkills(cf.Execution.Tools.Skills, "execution", logger),
 		Verification: parseSkills(cf.Verification.Tools.Skills, "verification", logger),
+	}
+
+	cfg.Agent = AgentConfig{
+		Default:      cf.Agent.Default,
+		Analysis:     cf.Agent.Analysis,
+		Execution:    cf.Agent.Execution,
+		Verification: cf.Agent.Verification,
 	}
 
 	return cfg

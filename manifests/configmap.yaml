@@ -32,6 +32,15 @@ data:
     #         - /skills/prometheus
     #         - /skills/cluster-diagnostics
 
+    # agent: override which agent handles Proposal workflow steps.
+    # 'default' sets the agent for all steps; per-step keys override it.
+    # Falls back to the hardcoded "default" agent when omitted.
+    # agent:
+    #   default: "default"
+    #   analysis: "analysis-agent"
+    #   execution: "execution-agent"
+    #   verification: "verification-agent"
+
     # Per-step tool overrides. When set, these replace the shared tools for that
     # step on the Proposal (maps to spec.{analysis,execution,verification}.tools).
     # analysis:
