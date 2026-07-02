@@ -155,7 +155,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		p, err := proposal.Build(alert, a.cfg.Tools)
+		p, err := proposal.Build(alert, a.cfg.Tools, a.cfg.Agent)
 		if err != nil {
 			a.logger.Error("failed to build proposal",
 				"alertname", alertName,

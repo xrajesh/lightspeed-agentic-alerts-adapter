@@ -60,7 +60,7 @@ type requestData struct {
 // The Proposal name is deterministic based on the alert's identity (alertname,
 // namespace, fingerprint), making repeated calls for the same alert safe
 // against duplicate creation via Kubernetes 409 AlreadyExists.
-func Build(a *models.GettableAlert, tools config.ToolsConfig) (*agenticv1alpha1.Proposal, error) {
+func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig) (*agenticv1alpha1.Proposal, error) {
 	if a.Fingerprint == nil {
 		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
 	}
@@ -75,9 +75,9 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig) (*agenticv1alpha1.
 		return nil, err
 	}
 
-	analysis := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
-	execution := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
-	verification := agenticv1alpha1.ProposalStep{Agent: defaultAgent}
+	analysis := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Analysis, agent.Default)}
+	execution := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Execution, agent.Default)}
+	verification := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Verification, agent.Default)}
 
 	if len(tools.Analysis) > 0 {
 		analysis.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Analysis}
@@ -216,6 +216,16 @@ func sanitizeLabelValue(s string) string {
 	s = strings.TrimRight(s, "-_.")
 
 	return s
+}
+
+func resolveAgent(perStep, global string) string {
+	if perStep != "" {
+		return perStep
+	}
+	if global != "" {
+		return global
+	}
+	return defaultAgent
 }
 
 func truncateDNS(s string, maxLen int) string {
