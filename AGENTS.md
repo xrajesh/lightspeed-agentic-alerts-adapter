@@ -26,7 +26,7 @@ go test -run TestFunctionName/subtest_name ./internal/adapter/
 Three internal packages, each behind an interface, wired together in `cmd/alerts-adapter/main.go`:
 
 - **`internal/alertmanager`** — AlertManager API client. Reads bearer token on every call (handles rotation). TLS via in-cluster CA. Implements `adapter.AlertSource`.
-- **`internal/proposal`** — Two concerns: `build.go` translates an alert into a `Proposal` CR (deterministic name from fingerprint, embedded Go template `request.tmpl` for the request field); `client.go` wraps controller-runtime to create/list Proposals. Implements `adapter.ProposalClient`.
+- **`internal/proposal`** — Two concerns: `build.go` translates an alert into a `Proposal` CR (deterministic name from alertname, namespace, and startsAt hash; embedded Go template `request.tmpl` for the request field); `client.go` wraps controller-runtime to create/list Proposals. Implements `adapter.ProposalClient`.
 - **`internal/adapter`** — Poll loop (`Run` → `reconcile` on ticker). Stateless deduplication: skips alerts below `initialDelay` (5m), with an active (non-terminal) Proposal, or within `cooldownWindow` (1h) of a terminal Proposal. Matching is by `alert-fingerprint` label (first 8 chars).
 
 The Proposal CRD types come from `github.com/openshift/lightspeed-agentic-operator/api`.
@@ -36,7 +36,7 @@ The Proposal CRD types come from `github.com/openshift/lightspeed-agentic-operat
 - Polls (not webhooks) for resilience — restart immediately sees all firing alerts.
 - Proposals always created in `openshift-lightspeed` namespace.
 - 409 AlreadyExists on create is expected and handled as a no-op (returns `false, nil`).
-- Fingerprint prefix (8 chars) is used for both Proposal naming and dedup matching (`proposal.FingerprintLen`).
+- Fingerprint prefix (8 chars) is used for dedup matching via the `alert-fingerprint` label (`proposal.FingerprintLen`). Proposal names use a hash of the alert's `startsAt` timestamp instead, so different occurrences of the same alert produce distinct Proposals.
 - Terminal phases: Completed, Failed, Denied, Escalated.
 
 ## Conventions

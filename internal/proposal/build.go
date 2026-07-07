@@ -3,7 +3,9 @@ package proposal
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -58,8 +60,10 @@ type requestData struct {
 
 // Build constructs a Proposal from a single Alertmanager GettableAlert.
 // The Proposal name is deterministic based on the alert's identity (alertname,
-// namespace, fingerprint), making repeated calls for the same alert safe
-// against duplicate creation via Kubernetes 409 AlreadyExists.
+// namespace, startsAt), making repeated calls for the same alert occurrence
+// safe against duplicate creation via Kubernetes 409 AlreadyExists.
+// Different occurrences of the same alert (different startsAt) produce
+// distinct Proposal names, allowing re-creation after cooldown.
 func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig) (*agenticv1alpha1.Proposal, error) {
 	if a.Fingerprint == nil {
 		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
@@ -69,6 +73,11 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 	namespace := a.Labels["namespace"]
 	fingerprint := *a.Fingerprint
 	severity := a.Labels["severity"]
+
+	if a.StartsAt == nil {
+		return nil, fmt.Errorf("proposal: alert startsAt is nil")
+	}
+	startsAt := time.Time(*a.StartsAt)
 
 	request, err := buildRequest(a)
 	if err != nil {
@@ -95,7 +104,7 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 			Kind:       "Proposal",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        buildName(alertName, namespace, fingerprint),
+			Name:        buildName(alertName, namespace, startsAt),
 			Namespace:   proposalNamespace,
 			Labels:      buildLabels(alertName, severity, fingerprint),
 			Annotations: buildAnnotations(a),
@@ -119,15 +128,14 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 	return p, nil
 }
 
-// buildName produces a deterministic DNS-compatible name: {alertname}-{namespace}-{fingerprint[:8]}
-// or {alertname}-{fingerprint[:8]} for cluster-scoped alerts.
+// buildName produces a deterministic DNS-compatible name: {alertname}-{namespace}-{startsAtHash}
+// or {alertname}-{startsAtHash} for cluster-scoped alerts.
+// The startsAt hash is an 8-character hex digest of the alert's start time,
+// ensuring each alert occurrence gets a unique Proposal name.
 // The name is capped at 63 characters because the agentic operator uses it as a
 // Kubernetes label value, which has a 63-byte limit.
-func buildName(alertName, namespace, fingerprint string) string {
-	fp := fingerprint
-	if len(fp) > FingerprintLen {
-		fp = fp[:FingerprintLen]
-	}
+func buildName(alertName, namespace string, startsAt time.Time) string {
+	hash := startsAtHash(startsAt)
 
 	name := strings.ToLower(alertName)
 	name = invalidDNSChars.ReplaceAllString(name, "-")
@@ -135,20 +143,27 @@ func buildName(alertName, namespace, fingerprint string) string {
 	if namespace != "" {
 		ns := strings.ToLower(namespace)
 		ns = invalidDNSChars.ReplaceAllString(ns, "-")
-		combined := name + "-" + ns + "-" + fp
+		combined := name + "-" + ns + "-" + hash
 		if len(combined) <= maxLabelValueLen {
 			return combined
 		}
-		available := max(maxLabelValueLen-len(ns)-len(fp)-2, 1)
-		return truncateDNS(name, available) + "-" + ns + "-" + fp
+		available := max(maxLabelValueLen-len(ns)-len(hash)-2, 1)
+		return truncateDNS(name, available) + "-" + ns + "-" + hash
 	}
 
-	combined := name + "-" + fp
+	combined := name + "-" + hash
 	if len(combined) <= maxLabelValueLen {
 		return combined
 	}
-	available := maxLabelValueLen - len(fp) - 1
-	return truncateDNS(name, available) + "-" + fp
+	available := maxLabelValueLen - len(hash) - 1
+	return truncateDNS(name, available) + "-" + hash
+}
+
+const startsAtHashLen = 8
+
+func startsAtHash(t time.Time) string {
+	h := sha256.Sum256([]byte(t.UTC().Format(time.RFC3339)))
+	return hex.EncodeToString(h[:])[:startsAtHashLen]
 }
 
 // buildLabels sets Kubernetes labels for alert traceability and filtering.
