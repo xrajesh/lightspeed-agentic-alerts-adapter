@@ -6,4 +6,4 @@
 ## 2. Tests
 
 - [x] 2.1 Add unit tests for `skipSeverity` covering: none, info, warning, critical, mixed-case, empty string, and missing severity label
-- [x] 2.2 Add reconcile-level test verifying that alerts with severity `none`/`info` do not result in Proposal creation
+- [x] 2.2 Add reconcile-level test verifying that alerts with severity `none`/`info` do not result in AgenticRun creation

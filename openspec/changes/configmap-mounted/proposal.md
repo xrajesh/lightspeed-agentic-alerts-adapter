@@ -28,4 +28,4 @@ The adapter currently reads the `alerts-adapter-config` ConfigMap via the Kubern
 - **`cmd/alerts-adapter/main.go`** — No longer needs `corev1` scheme or `controller-runtime` client for config. Reads a config file path from an environment variable or flag.
 - **`manifests/deployment.yaml`** — Adds ConfigMap volume and volumeMount.
 - **`manifests/rbac.yaml`** — Removes the `Role`/`RoleBinding` for ConfigMap access.
-- **Dependencies** — `k8s.io/api/core/v1` and `sigs.k8s.io/controller-runtime/pkg/client` may become unused if Proposals also stop needing them (Proposals still need the client, so `controller-runtime` stays but `corev1` registration in `main.go` can be removed).
+- **Dependencies** — `k8s.io/api/core/v1` and `sigs.k8s.io/controller-runtime/pkg/client` may become unused if AgenticRuns also stop needing them (AgenticRuns still need the client, so `controller-runtime` stays but `corev1` registration in `main.go` can be removed).

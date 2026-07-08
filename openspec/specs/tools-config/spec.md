@@ -1,9 +1,9 @@
 ## Purpose
-Parse and validate tools/skills configuration from the alerts-adapter-config ConfigMap so the adapter can populate shared and per-step skills on Proposal custom resources.
+Parse and validate tools/skills configuration from the alerts-adapter-config ConfigMap so the adapter can populate shared and per-step skills on AgenticRun custom resources.
 
 ## Requirements
 ### Requirement: Parse shared skills configuration from ConfigMap
-The system SHALL parse an optional `tools.skills` key from the `config.yaml` data in the `alerts-adapter-config` ConfigMap. Each skills entry specifies an OCI image and a list of mount paths. These shared skills map to `spec.tools.skills` on the Proposal.
+The system SHALL parse an optional `tools.skills` key from the `config.yaml` data in the `alerts-adapter-config` ConfigMap. Each skills entry specifies an OCI image and a list of mount paths. These shared skills map to `spec.tools.skills` on the AgenticRun.
 
 #### Scenario: ConfigMap contains valid shared skills entries
 - **WHEN** the ConfigMap `config.yaml` contains a `tools.skills` list with entries that have non-empty `image` and non-empty `paths`
@@ -18,7 +18,7 @@ The system SHALL parse an optional `tools.skills` key from the `config.yaml` dat
 - **THEN** the loaded `Config` SHALL use defaults for all timing parameters and have empty tools config
 
 ### Requirement: Parse per-step skills configuration from ConfigMap
-The system SHALL parse optional `analysis.tools.skills`, `execution.tools.skills`, and `verification.tools.skills` keys from the `config.yaml` data. Per-step skills map to `spec.{analysis,execution,verification}.tools.skills` on the Proposal and replace the shared default for that step.
+The system SHALL parse optional `analysis.tools.skills`, `execution.tools.skills`, and `verification.tools.skills` keys from the `config.yaml` data. Per-step skills map to `spec.{analysis,execution,verification}.tools.skills` on the AgenticRun and replace the shared default for that step.
 
 #### Scenario: ConfigMap contains per-step skills for analysis
 - **WHEN** the ConfigMap `config.yaml` contains `analysis.tools.skills` with valid entries

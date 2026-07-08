@@ -1,5 +1,5 @@
 ## Purpose
-Filter alerts based on a configurable allowlist of AlertManager receivers, ensuring only alerts routed to approved receivers are processed for Proposal creation.
+Filter alerts based on a configurable allowlist of AlertManager receivers, ensuring only alerts routed to approved receivers are processed for AgenticRun creation.
 
 ## Requirements
 ### Requirement: Skip alerts not routed to an allowed receiver

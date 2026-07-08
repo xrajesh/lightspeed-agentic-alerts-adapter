@@ -1,6 +1,6 @@
 # Lightspeed Agentic Alerts Adapter
 
-A Go component that polls OpenShift AlertManager for firing alerts and creates `Proposal` CRs (`agentic.openshift.io/v1alpha1`) to trigger automated remediation via the Lightspeed Agentic operator. Stateless, single-replica, create-only design — no internal state, diffs AlertManager vs Kubernetes API each cycle.
+A Go component that polls OpenShift AlertManager for firing alerts and creates `AgenticRun` CRs (`agentic.openshift.io/v1alpha1`) to trigger automated remediation via the Lightspeed Agentic operator. Stateless, single-replica, create-only design — no internal state, diffs AlertManager vs Kubernetes API each cycle.
 
 ## Commands
 
@@ -26,17 +26,17 @@ go test -run TestFunctionName/subtest_name ./internal/adapter/
 Three internal packages, each behind an interface, wired together in `cmd/alerts-adapter/main.go`:
 
 - **`internal/alertmanager`** — AlertManager API client. Reads bearer token on every call (handles rotation). TLS via in-cluster CA. Implements `adapter.AlertSource`.
-- **`internal/proposal`** — Two concerns: `build.go` translates an alert into a `Proposal` CR (deterministic name from alertname, namespace, and startsAt hash; embedded Go template `request.tmpl` for the request field); `client.go` wraps controller-runtime to create/list Proposals. Implements `adapter.ProposalClient`.
-- **`internal/adapter`** — Poll loop (`Run` → `reconcile` on ticker). Stateless deduplication: skips alerts below `initialDelay` (5m), with an active (non-terminal) Proposal, or within `cooldownWindow` (1h) of a terminal Proposal. Matching is by `alert-fingerprint` label (first 8 chars).
+- **`internal/agenticrun`** — Two concerns: `build.go` translates an alert into an `AgenticRun` CR (deterministic name from alertname, namespace, and startsAt hash; embedded Go template `request.tmpl` for the request field); `client.go` wraps controller-runtime to create/list AgenticRuns. Implements `adapter.AgenticRunClient`.
+- **`internal/adapter`** — Poll loop (`Run` → `reconcile` on ticker). Stateless deduplication: skips alerts below `initialDelay` (5m), with an active (non-terminal) AgenticRun, or within `cooldownWindow` (1h) of a terminal AgenticRun. Matching is by `alert-fingerprint` label (first 8 chars).
 
-The Proposal CRD types come from `github.com/openshift/lightspeed-agentic-operator/api`.
+The AgenticRun CRD types come from `github.com/openshift/lightspeed-agentic-operator/api`.
 
 ## Key design decisions
 
 - Polls (not webhooks) for resilience — restart immediately sees all firing alerts.
-- Proposals always created in `openshift-lightspeed` namespace.
+- AgenticRuns always created in `openshift-lightspeed` namespace.
 - 409 AlreadyExists on create is expected and handled as a no-op (returns `false, nil`).
-- Fingerprint prefix (8 chars) is used for dedup matching via the `alert-fingerprint` label (`proposal.FingerprintLen`). Proposal names use a hash of the alert's `startsAt` timestamp instead, so different occurrences of the same alert produce distinct Proposals.
+- Fingerprint prefix (8 chars) is used for dedup matching via the `alert-fingerprint` label (`agenticrun.FingerprintLen`). AgenticRun names use a hash of the alert's `startsAt` timestamp instead, so different occurrences of the same alert produce distinct AgenticRuns.
 - Terminal phases: Completed, Failed, Denied, Escalated.
 
 ## Conventions

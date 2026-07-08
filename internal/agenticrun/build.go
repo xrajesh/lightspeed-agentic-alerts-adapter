@@ -1,5 +1,5 @@
-// Package proposal translates Alertmanager alerts into Proposal custom resources.
-package proposal
+// Package agenticrun translates Alertmanager alerts into AgenticRun custom resources.
+package agenticrun
 
 import (
 	"bytes"
@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	proposalNamespace = "openshift-lightspeed"
-	defaultAgent      = "default"
+	runNamespace = "openshift-lightspeed"
+	defaultAgent = "default"
 
 	labelSource      = "agentic.openshift.io/source"
 	labelFingerprint = "agentic.openshift.io/alert-fingerprint"
@@ -36,7 +36,7 @@ const (
 	// FingerprintLen is the number of characters used from the alert fingerprint
 	// for labels and dedup matching. Exported for use by the adapter package.
 	FingerprintLen = 8
-	maxSummaryLen    = 256
+	maxSummaryLen  = 256
 )
 
 var (
@@ -58,15 +58,15 @@ type requestData struct {
 	Labels      map[string]string
 }
 
-// Build constructs a Proposal from a single Alertmanager GettableAlert.
-// The Proposal name is deterministic based on the alert's identity (alertname,
+// Build constructs an AgenticRun from a single Alertmanager GettableAlert.
+// The AgenticRun name is deterministic based on the alert's identity (alertname,
 // namespace, startsAt), making repeated calls for the same alert occurrence
 // safe against duplicate creation via Kubernetes 409 AlreadyExists.
 // Different occurrences of the same alert (different startsAt) produce
-// distinct Proposal names, allowing re-creation after cooldown.
-func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig) (*agenticv1alpha1.Proposal, error) {
+// distinct AgenticRun names, allowing re-creation after cooldown.
+func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig) (*agenticv1alpha1.AgenticRun, error) {
 	if a.Fingerprint == nil {
-		return nil, fmt.Errorf("proposal: alert fingerprint is nil")
+		return nil, fmt.Errorf("agenticrun: alert fingerprint is nil")
 	}
 
 	alertName := a.Labels["alertname"]
@@ -75,7 +75,7 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 	severity := a.Labels["severity"]
 
 	if a.StartsAt == nil {
-		return nil, fmt.Errorf("proposal: alert startsAt is nil")
+		return nil, fmt.Errorf("agenticrun: alert startsAt is nil")
 	}
 	startsAt := time.Time(*a.StartsAt)
 
@@ -84,9 +84,9 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 		return nil, err
 	}
 
-	analysis := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Analysis, agent.Default)}
-	execution := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Execution, agent.Default)}
-	verification := agenticv1alpha1.ProposalStep{Agent: resolveAgent(agent.Verification, agent.Default)}
+	analysis := agenticv1alpha1.AgenticRunStep{Agent: resolveAgent(agent.Analysis, agent.Default)}
+	execution := agenticv1alpha1.AgenticRunStep{Agent: resolveAgent(agent.Execution, agent.Default)}
+	verification := agenticv1alpha1.AgenticRunStep{Agent: resolveAgent(agent.Verification, agent.Default)}
 
 	if len(tools.Analysis) > 0 {
 		analysis.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Analysis}
@@ -98,18 +98,18 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 		verification.Tools = agenticv1alpha1.ToolsSpec{Skills: tools.Verification}
 	}
 
-	p := &agenticv1alpha1.Proposal{
+	p := &agenticv1alpha1.AgenticRun{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "agentic.openshift.io/v1alpha1",
-			Kind:       "Proposal",
+			Kind:       "AgenticRun",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        buildName(alertName, namespace, startsAt),
-			Namespace:   proposalNamespace,
+			Namespace:   runNamespace,
 			Labels:      buildLabels(alertName, severity, fingerprint),
 			Annotations: buildAnnotations(a),
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:      request,
 			Analysis:     analysis,
 			Execution:    execution,
@@ -131,7 +131,7 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 // buildName produces a deterministic DNS-compatible name: {alertname}-{namespace}-{startsAtHash}
 // or {alertname}-{startsAtHash} for cluster-scoped alerts.
 // The startsAt hash is an 8-character hex digest of the alert's start time,
-// ensuring each alert occurrence gets a unique Proposal name.
+// ensuring each alert occurrence gets a unique AgenticRun name.
 // The name is capped at 63 characters because the agentic operator uses it as a
 // Kubernetes label value, which has a 63-byte limit.
 func buildName(alertName, namespace string, startsAt time.Time) string {
@@ -209,7 +209,7 @@ func buildRequest(a *models.GettableAlert) (string, error) {
 
 	var buf bytes.Buffer
 	if err := requestTemplate.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("proposal: rendering request template: %w", err)
+		return "", fmt.Errorf("agenticrun: rendering request template: %w", err)
 	}
 	return buf.String(), nil
 }

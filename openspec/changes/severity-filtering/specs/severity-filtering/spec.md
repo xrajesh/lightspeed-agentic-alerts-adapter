@@ -1,23 +1,23 @@
 ## ADDED Requirements
 
 ### Requirement: Skip alerts with low severity
-The adapter SHALL skip alerts whose `severity` label is `none` or `info` (case-insensitive) during reconciliation. Skipped alerts MUST NOT result in Proposal CR creation. The severity check SHALL be performed before all other skip checks (initial delay, active proposal, cooldown).
+The adapter SHALL skip alerts whose `severity` label is `none` or `info` (case-insensitive) during reconciliation. Skipped alerts MUST NOT result in AgenticRun CR creation. The severity check SHALL be performed before all other skip checks (initial delay, active AgenticRun, cooldown).
 
 #### Scenario: Alert with severity none is skipped
 - **WHEN** an alert has severity label `none`
-- **THEN** the adapter skips the alert and does not create a Proposal
+- **THEN** the adapter skips the alert and does not create an AgenticRun
 
 #### Scenario: Alert with severity info is skipped
 - **WHEN** an alert has severity label `info`
-- **THEN** the adapter skips the alert and does not create a Proposal
+- **THEN** the adapter skips the alert and does not create an AgenticRun
 
 #### Scenario: Alert with severity warning is processed
 - **WHEN** an alert has severity label `warning`
-- **THEN** the adapter processes the alert through remaining filters and may create a Proposal
+- **THEN** the adapter processes the alert through remaining filters and may create an AgenticRun
 
 #### Scenario: Alert with severity critical is processed
 - **WHEN** an alert has severity label `critical`
-- **THEN** the adapter processes the alert through remaining filters and may create a Proposal
+- **THEN** the adapter processes the alert through remaining filters and may create an AgenticRun
 
 #### Scenario: Case-insensitive severity matching
 - **WHEN** an alert has severity label `Info` or `NONE` (mixed case)

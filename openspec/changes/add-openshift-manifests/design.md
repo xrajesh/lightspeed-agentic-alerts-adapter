@@ -1,6 +1,6 @@
 ## Context
 
-The adapter is a stateless Go binary that polls AlertManager and creates Proposal CRs. ARCHITECTURE.md already specifies the intended Kubernetes resources (Deployment, ServiceAccount, RBAC), but no actual manifest files exist. The adapter runs as a single-replica Deployment in the `openshift-lightspeed` namespace, uses in-cluster ServiceAccount authentication, and needs cross-namespace RBAC for both AlertManager reads and Proposal writes.
+The adapter is a stateless Go binary that polls AlertManager and creates AgenticRun CRs. ARCHITECTURE.md already specifies the intended Kubernetes resources (Deployment, ServiceAccount, RBAC), but no actual manifest files exist. The adapter runs as a single-replica Deployment in the `openshift-lightspeed` namespace, uses in-cluster ServiceAccount authentication, and needs cross-namespace RBAC for both AlertManager reads and AgenticRun writes.
 
 ## Goals / Non-Goals
 
@@ -33,4 +33,4 @@ Include a `namespace.yaml` that creates `openshift-lightspeed`. This makes the m
 
 - **Image tag `latest`**: The ARCHITECTURE.md example uses `latest`. This is fine for development but should be pinned to a specific digest or tag for production. This is a future concern, not in scope for this change.
 - **`monitoring-alertmanager-view` Role must pre-exist**: The RoleBinding references a Role provided by the OpenShift monitoring stack. If the monitoring stack is not installed, the RoleBinding will fail. This is documented as a prerequisite.
-- **Proposal CRD must pre-exist**: The ClusterRole references `proposals` in the `agentic.openshift.io` API group. The CRD must be installed (via the lightspeed-agentic-operator) before the adapter's RBAC is meaningful.
+- **AgenticRun CRD must pre-exist**: The ClusterRole references `agenticruns` in the `agentic.openshift.io` API group. The CRD must be installed (via the lightspeed-agentic-operator) before the adapter's RBAC is meaningful.

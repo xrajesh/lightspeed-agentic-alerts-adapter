@@ -1,4 +1,4 @@
-package proposal
+package agenticrun
 
 import (
 	"strings"
@@ -50,7 +50,7 @@ func TestBuild(t *testing.T) {
 			name:              "namespaced alert",
 			alert:             makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical"),
 			expectedName:      "kubepodcrashlooping-production-895c8977",
-			expectedNamespace: proposalNamespace,
+			expectedNamespace: runNamespace,
 			expectedTargetNS:  []string{"production"},
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
@@ -67,7 +67,7 @@ func TestBuild(t *testing.T) {
 				return a
 			}(),
 			expectedName:      "clusterversionavailable-895c8977",
-			expectedNamespace: proposalNamespace,
+			expectedNamespace: runNamespace,
 			expectedTargetNS:  nil,
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
@@ -80,7 +80,7 @@ func TestBuild(t *testing.T) {
 			name:              "short fingerprint (less than 8 chars)",
 			alert:             makeAlert("TestAlert", "ns", "abc", "warning"),
 			expectedName:      "testalert-ns-895c8977",
-			expectedNamespace: proposalNamespace,
+			expectedNamespace: runNamespace,
 			expectedTargetNS:  []string{"ns"},
 			expectedLabels: map[string]string{
 				labelSource:      sourceValue,
@@ -417,8 +417,8 @@ func TestBuildTypeMeta(t *testing.T) {
 	if p.APIVersion != "agentic.openshift.io/v1alpha1" {
 		t.Errorf("apiVersion = %q, want %q", p.APIVersion, "agentic.openshift.io/v1alpha1")
 	}
-	if p.Kind != "Proposal" {
-		t.Errorf("kind = %q, want %q", p.Kind, "Proposal")
+	if p.Kind != "AgenticRun" {
+		t.Errorf("kind = %q, want %q", p.Kind, "AgenticRun")
 	}
 }
 
@@ -561,11 +561,11 @@ func TestBuildWithTools(t *testing.T) {
 
 func TestBuildWithAgentOverrides(t *testing.T) {
 	tests := []struct {
-		name              string
-		agent             config.AgentConfig
-		wantAnalysis      string
-		wantExecution     string
-		wantVerification  string
+		name             string
+		agent            config.AgentConfig
+		wantAnalysis     string
+		wantExecution    string
+		wantVerification string
 	}{
 		{
 			name:             "no agent config uses default for all steps",

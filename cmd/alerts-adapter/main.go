@@ -14,9 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/adapter"
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/agenticrun"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/alertmanager"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
-	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/proposal"
 )
 
 func main() {
@@ -44,9 +44,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	propClient := proposal.NewClient(k8sClient, logger)
+	runClient := agenticrun.NewClient(k8sClient, logger)
 
-	a := adapter.New(amClient, propClient, cfg, logger)
+	a := adapter.New(amClient, runClient, cfg, logger)
 	if err := a.Run(ctx); err != nil {
 		logger.Error("fatal error", "error", err)
 		os.Exit(1)

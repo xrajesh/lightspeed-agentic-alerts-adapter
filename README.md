@@ -1,6 +1,6 @@
 # Lightspeed Agentic Alerts Adapter
 
-A component that bridges OpenShift cluster alerts into the [Lightspeed Agentic](https://github.com/openshift/lightspeed-agentic-operator) system. It polls the in-cluster AlertManager API for firing alerts and creates `Proposal` custom resources (`agentic.openshift.io/v1alpha1`) to trigger automated analysis and remediation workflows.
+A component that bridges OpenShift cluster alerts into the [Lightspeed Agentic](https://github.com/openshift/lightspeed-agentic-operator) system. It polls the in-cluster AlertManager API for firing alerts and creates `AgenticRun` custom resources (`agentic.openshift.io/v1alpha1`) to trigger automated analysis and remediation workflows.
 
 ## Quick start
 
@@ -60,13 +60,13 @@ Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap i
 | Field | Default | Description |
 |---|---|---|
 | `pollInterval` | `30s` | How often to poll AlertManager |
-| `initialDelay` | `5m` | Minimum time an alert must fire before a Proposal is created |
-| `cooldownWindow` | `1h` | Minimum time after a terminal Proposal before retrying the same alert |
-| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no proposals are created until receivers are explicitly configured |
+| `initialDelay` | `5m` | Minimum time an alert must fire before an AgenticRun is created |
+| `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before retrying the same alert |
+| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
 
 #### Tools / Skills
 
-Skills (OCI images with runbook paths) can be configured at a shared level or per Proposal step (`analysis`, `execution`, `verification`). Per-step skills override shared skills for that step.
+Skills (OCI images with runbook paths) can be configured at a shared level or per AgenticRun step (`analysis`, `execution`, `verification`). Per-step skills override shared skills for that step.
 
 | Field | Description |
 |---|---|

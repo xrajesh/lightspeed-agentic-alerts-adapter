@@ -21,7 +21,7 @@ Cluster administrators can customize AlertManager routing by creating `Alertmana
 
 ## How the alerts adapter uses receivers
 
-The alerts adapter uses receivers as a **scoping mechanism** to control which alerts trigger automated remediation. Rather than processing every firing alert, the adapter checks whether an alert is routed to at least one receiver in a configurable allowlist. Only matching alerts produce `Proposal` CRs.
+The alerts adapter uses receivers as a **scoping mechanism** to control which alerts trigger automated remediation. Rather than processing every firing alert, the adapter checks whether an alert is routed to at least one receiver in a configurable allowlist. Only matching alerts produce `AgenticRun` CRs.
 
 ### Filtering logic
 
@@ -36,7 +36,7 @@ This means the routing decisions already made by AlertManager — based on label
 
 ### Default behavior
 
-When no `allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to an empty list. This means no alerts produce Proposals until receivers are explicitly configured in the ConfigMap.
+When no `allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to an empty list. This means no alerts produce AgenticRuns until receivers are explicitly configured in the ConfigMap.
 
 ### Configuration
 
@@ -57,7 +57,7 @@ data:
 Key behaviors:
 
 - **Field absent** — uses the default empty list (no alerts are processed).
-- **Explicit empty list (`[]`)** — disables all Proposal creation; no alerts are processed.
+- **Explicit empty list (`[]`)** — disables all AgenticRun creation; no alerts are processed.
 - **Case-insensitive** — `"Critical"`, `"critical"`, and `"CRITICAL"` all match the same receiver.
 - **Multiple receivers** — an alert passes if *any* of its receivers appears in the allowlist.
 - **Hot-reloadable** — changes to the ConfigMap take effect on the next poll cycle without restarting the adapter.

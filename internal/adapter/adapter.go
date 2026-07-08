@@ -1,5 +1,5 @@
 // Package adapter implements the poll loop that connects AlertManager alerts
-// to Proposal creation with stateless deduplication.
+// to AgenticRun creation with stateless deduplication.
 package adapter
 
 import (
@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/agenticrun"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
-	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/proposal"
 )
 
 // AlertSource retrieves firing alerts from an external alerting system.
@@ -22,30 +22,30 @@ type AlertSource interface {
 	GetAlerts(ctx context.Context) (models.GettableAlerts, error)
 }
 
-// ProposalClient manages Proposal custom resources in the cluster.
-type ProposalClient interface {
-	ListProposals(ctx context.Context) ([]agenticv1alpha1.Proposal, error)
-	CreateProposal(ctx context.Context, p *agenticv1alpha1.Proposal) (bool, error)
+// AgenticRunClient manages AgenticRun custom resources in the cluster.
+type AgenticRunClient interface {
+	ListAgenticRuns(ctx context.Context) ([]agenticv1alpha1.AgenticRun, error)
+	CreateAgenticRun(ctx context.Context, p *agenticv1alpha1.AgenticRun) (bool, error)
 }
 
-// Adapter polls AlertManager for firing alerts and creates Proposal CRs,
-// applying stateless deduplication (initial delay, active-proposal check,
+// Adapter polls AlertManager for firing alerts and creates AgenticRun CRs,
+// applying stateless deduplication (initial delay, active-run check,
 // and cooldown window) on each cycle.
 type Adapter struct {
-	alerts    AlertSource
-	proposals ProposalClient
-	cfg       config.Config
-	logger    *slog.Logger
+	alerts AlertSource
+	runs   AgenticRunClient
+	cfg    config.Config
+	logger *slog.Logger
 }
 
-// New creates an Adapter with the given alert source, proposal client,
+// New creates an Adapter with the given alert source, run client,
 // config, and logger.
-func New(alerts AlertSource, proposals ProposalClient, cfg config.Config, logger *slog.Logger) *Adapter {
+func New(alerts AlertSource, runs AgenticRunClient, cfg config.Config, logger *slog.Logger) *Adapter {
 	return &Adapter{
-		alerts:    alerts,
-		proposals: proposals,
-		cfg:       cfg,
-		logger:    logger,
+		alerts: alerts,
+		runs:   runs,
+		cfg:    cfg,
+		logger: logger,
 	}
 }
 
@@ -83,9 +83,9 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		return
 	}
 
-	proposals, err := a.proposals.ListProposals(ctx)
+	runs, err := a.runs.ListAgenticRuns(ctx)
 	if err != nil {
-		a.logger.Error("failed to list proposals", "error", err)
+		a.logger.Error("failed to list runs", "error", err)
 		return
 	}
 
@@ -136,8 +136,8 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if hasActiveProposal(alert, proposals) {
-			a.logger.Debug("alert skipped: active proposal exists",
+		if hasActiveRun(alert, runs) {
+			a.logger.Debug("alert skipped: active run exists",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
 			)
@@ -145,7 +145,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if inCooldown(alert, proposals, now, a.cfg.CooldownWindow) {
+		if inCooldown(alert, runs, now, a.cfg.CooldownWindow) {
 			a.logger.Debug("alert skipped: cooldown window",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -155,9 +155,9 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		p, err := proposal.Build(alert, a.cfg.Tools, a.cfg.Agent)
+		p, err := agenticrun.Build(alert, a.cfg.Tools, a.cfg.Agent)
 		if err != nil {
-			a.logger.Error("failed to build proposal",
+			a.logger.Error("failed to build run",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
 				"error", err,
@@ -165,22 +165,22 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		wasCreated, err := a.proposals.CreateProposal(ctx, p)
+		wasCreated, err := a.runs.CreateAgenticRun(ctx, p)
 		if err != nil {
-			a.logger.Error("failed to create proposal",
+			a.logger.Error("failed to create run",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
-				"proposal", p.Name,
+				"run", p.Name,
 				"error", err,
 			)
 			continue
 		}
 
 		if wasCreated {
-			a.logger.Info("proposal created",
+			a.logger.Info("run created",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
-				"proposal", p.Name,
+				"run", p.Name,
 			)
 			created++
 		}
@@ -227,17 +227,17 @@ func skipInitialDelay(alert *models.GettableAlert, now time.Time, threshold time
 	return now.Sub(time.Time(*alert.StartsAt)) < threshold
 }
 
-func hasActiveProposal(alert *models.GettableAlert, proposals []agenticv1alpha1.Proposal) bool {
+func hasActiveRun(alert *models.GettableAlert, runs []agenticv1alpha1.AgenticRun) bool {
 	fp := fingerprintPrefix(alert)
 	if fp == "" {
 		return false
 	}
 
-	for i := range proposals {
-		if proposals[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
+	for i := range runs {
+		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
 			continue
 		}
-		phase := agenticv1alpha1.DerivePhase(proposals[i].Status.Conditions)
+		phase := agenticv1alpha1.DerivePhase(runs[i].Status.Conditions)
 		if !isTerminal(phase) {
 			return true
 		}
@@ -245,17 +245,17 @@ func hasActiveProposal(alert *models.GettableAlert, proposals []agenticv1alpha1.
 	return false
 }
 
-func inCooldown(alert *models.GettableAlert, proposals []agenticv1alpha1.Proposal, now time.Time, window time.Duration) bool {
+func inCooldown(alert *models.GettableAlert, runs []agenticv1alpha1.AgenticRun, now time.Time, window time.Duration) bool {
 	fp := fingerprintPrefix(alert)
 	if fp == "" {
 		return false
 	}
 
-	for i := range proposals {
-		if proposals[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
+	for i := range runs {
+		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
 			continue
 		}
-		tt := terminalTime(&proposals[i])
+		tt := terminalTime(&runs[i])
 		if tt != nil && now.Sub(*tt) < window {
 			return true
 		}
@@ -264,20 +264,20 @@ func inCooldown(alert *models.GettableAlert, proposals []agenticv1alpha1.Proposa
 }
 
 // terminalTime returns the LastTransitionTime of the condition that caused
-// the proposal to reach a terminal phase, or nil if the proposal is not terminal.
-func terminalTime(p *agenticv1alpha1.Proposal) *time.Time {
+// the run to reach a terminal phase, or nil if the run is not terminal.
+func terminalTime(p *agenticv1alpha1.AgenticRun) *time.Time {
 	phase := agenticv1alpha1.DerivePhase(p.Status.Conditions)
 
 	var condType string
 	switch phase {
-	case agenticv1alpha1.ProposalPhaseCompleted:
-		condType = agenticv1alpha1.ProposalConditionVerified
-	case agenticv1alpha1.ProposalPhaseFailed:
+	case agenticv1alpha1.AgenticRunPhaseCompleted:
+		condType = agenticv1alpha1.AgenticRunConditionVerified
+	case agenticv1alpha1.AgenticRunPhaseFailed:
 		condType = findFailedConditionType(p.Status.Conditions)
-	case agenticv1alpha1.ProposalPhaseDenied:
-		condType = agenticv1alpha1.ProposalConditionDenied
-	case agenticv1alpha1.ProposalPhaseEscalated:
-		condType = agenticv1alpha1.ProposalConditionEscalated
+	case agenticv1alpha1.AgenticRunPhaseDenied:
+		condType = agenticv1alpha1.AgenticRunConditionDenied
+	case agenticv1alpha1.AgenticRunPhaseEscalated:
+		condType = agenticv1alpha1.AgenticRunConditionEscalated
 	default:
 		return nil
 	}
@@ -304,12 +304,12 @@ func findFailedConditionType(conditions []metav1.Condition) string {
 	return ""
 }
 
-func isTerminal(phase agenticv1alpha1.ProposalPhase) bool {
+func isTerminal(phase agenticv1alpha1.AgenticRunPhase) bool {
 	switch phase {
-	case agenticv1alpha1.ProposalPhaseCompleted,
-		agenticv1alpha1.ProposalPhaseFailed,
-		agenticv1alpha1.ProposalPhaseDenied,
-		agenticv1alpha1.ProposalPhaseEscalated:
+	case agenticv1alpha1.AgenticRunPhaseCompleted,
+		agenticv1alpha1.AgenticRunPhaseFailed,
+		agenticv1alpha1.AgenticRunPhaseDenied,
+		agenticv1alpha1.AgenticRunPhaseEscalated:
 		return true
 	}
 	return false
@@ -320,8 +320,8 @@ func fingerprintPrefix(alert *models.GettableAlert) string {
 		return ""
 	}
 	fp := *alert.Fingerprint
-	if len(fp) > proposal.FingerprintLen {
-		fp = fp[:proposal.FingerprintLen]
+	if len(fp) > agenticrun.FingerprintLen {
+		fp = fp[:agenticrun.FingerprintLen]
 	}
 	return fp
 }

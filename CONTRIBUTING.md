@@ -42,7 +42,7 @@ feat: add alertmanager retry logic
 fix: guard against nil alert fingerprint
 test: cover AlreadyExists path
 docs: update architecture diagram
-refactor: return (bool, error) from CreateProposal
+refactor: return (bool, error) from CreateAgenticRun
 ```
 
 ## Code review

@@ -1,11 +1,11 @@
 ## Context
 
-The adapter builds Proposal CRs with all three workflow steps (analysis, execution, verification) hardcoded to the `"default"` agent (`internal/proposal/build.go:78-80`). The operator supports custom agents, but the adapter provides no way to select them. Configuration already supports tools/skills overrides via ConfigMap (`/etc/alerts-adapter/config.yaml`), so adding agent configuration follows the same pattern.
+The adapter builds AgenticRun CRs with all three workflow steps (analysis, execution, verification) hardcoded to the `"default"` agent (`internal/agenticrun/build.go:78-80`). The operator supports custom agents, but the adapter provides no way to select them. Configuration already supports tools/skills overrides via ConfigMap (`/etc/alerts-adapter/config.yaml`), so adding agent configuration follows the same pattern.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Allow operators to configure which agent handles Proposal steps via the existing ConfigMap
+- Allow operators to configure which agent handles AgenticRun steps via the existing ConfigMap
 - Support a global default agent and optional per-step overrides (analysis, execution, verification)
 - Maintain full backward compatibility — omitting the config results in the current `"default"` behavior
 
@@ -49,11 +49,11 @@ type AgentConfig struct {
 
 ### 3. Validation: empty strings are ignored, no existence checks
 
-Empty agent name strings are treated as "not configured" and fall through to the next fallback level. No validation is performed against the cluster — the operator validates agent references when it processes the Proposal.
+Empty agent name strings are treated as "not configured" and fall through to the next fallback level. No validation is performed against the cluster — the operator validates agent references when it processes the AgenticRun.
 
 **Rationale**: Consistent with how the adapter handles tools config (no validation of image references). Keeps the adapter simple and stateless.
 
 ## Risks / Trade-offs
 
-- **Typo in agent name silently accepted** → The operator will fail the Proposal with a clear error in its status conditions. The adapter logs which agent was assigned to each Proposal at creation time, making misconfiguration diagnosable.
+- **Typo in agent name silently accepted** → The operator will fail the AgenticRun with a clear error in its status conditions. The adapter logs which agent was assigned to each AgenticRun at creation time, making misconfiguration diagnosable.
 - **No per-alert routing** → Operators who need different agents for different alert types must deploy multiple adapter instances with different configs. This is acceptable for the initial implementation and can be extended later without breaking changes.

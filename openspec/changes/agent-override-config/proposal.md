@@ -1,6 +1,6 @@
 ## Why
 
-The adapter hardcodes `"default"` as the agent for all three Proposal workflow steps (analysis, execution, verification). Operators deploying custom agents cannot direct alerts to them — every Proposal always uses the default agent regardless of the alert type or operational context.
+The adapter hardcodes `"default"` as the agent for all three AgenticRun workflow steps (analysis, execution, verification). Operators deploying custom agents cannot direct alerts to them — every AgenticRun always uses the default agent regardless of the alert type or operational context.
 
 ## What Changes
 
@@ -14,12 +14,12 @@ The adapter hardcodes `"default"` as the agent for all three Proposal workflow s
 - `agent-config`: ConfigMap-based agent name configuration with global and per-step granularity
 
 ### Modified Capabilities
-- `proposal-building`: Proposal steps use configurable agent names instead of hardcoded `"default"`
+- `proposal-building`: AgenticRun steps use configurable agent names instead of hardcoded `"default"`
 - `configmap-config`: ConfigMap parsing includes the new `agent` section
 
 ## Impact
 
-- **Code**: `internal/config/config.go` (new struct + parsing), `internal/proposal/build.go` (accept agent config), `internal/adapter/adapter.go` (pass config through)
+- **Code**: `internal/config/config.go` (new struct + parsing), `internal/agenticrun/build.go` (accept agent config), `internal/adapter/adapter.go` (pass config through)
 - **Manifests**: `manifests/configmap.yaml` (document new optional section)
-- **APIs**: No CRD changes — uses existing `ProposalStep.Agent` field
+- **APIs**: No CRD changes — uses existing `AgenticRunStep.Agent` field
 - **Dependencies**: None — no new imports

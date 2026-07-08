@@ -1,21 +1,21 @@
-# Proposals: create and list Proposal CRs cluster-wide.
+# AgenticRuns: create and list AgenticRun CRs cluster-wide.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 rules:
   - apiGroups: ["agentic.openshift.io"]
-    resources: ["proposals"]
+    resources: ["agenticruns"]
     verbs: ["create", "list", "get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 subjects:
   - kind: ServiceAccount
     name: lightspeed-agentic-alerts-adapter

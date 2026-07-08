@@ -9,22 +9,22 @@ data:
     # Default: 30s
     pollInterval: 30s
 
-    # initialDelay: how long an alert must be firing before a Proposal is created.
+    # initialDelay: how long an alert must be firing before an AgenticRun is created.
     # Filters out transient alerts that resolve on their own.
     # Default: 5m
     initialDelay: 5m
 
-    # cooldownWindow: after a Proposal reaches a terminal state (Completed, Failed,
-    # Denied, Escalated), how long to wait before creating a new Proposal for the
+    # cooldownWindow: after an AgenticRun reaches a terminal state (Completed, Failed,
+    # Denied, Escalated), how long to wait before creating a new AgenticRun for the
     # same alert (matched by fingerprint label). Prevents flooding for flapping alerts.
     # Default: 1h
     cooldownWindow: 1h
     allowedReceivers:
      - critical
 
-    # tools: shared skills for all workflow steps (maps to spec.tools on the Proposal).
-    # When configured, every Proposal created by the adapter includes these skills.
-    # Omit to create Proposals with no tools.
+    # tools: shared skills for all workflow steps (maps to spec.tools on the AgenticRun).
+    # When configured, every AgenticRun created by the adapter includes these skills.
+    # Omit to create AgenticRuns with no tools.
     # tools:
     #   skills:
     #     - image: registry.redhat.io/openshift-lightspeed/agentic-skills:latest
@@ -32,7 +32,7 @@ data:
     #         - /skills/prometheus
     #         - /skills/cluster-diagnostics
 
-    # agent: override which agent handles Proposal workflow steps.
+    # agent: override which agent handles AgenticRun workflow steps.
     # 'default' sets the agent for all steps; per-step keys override it.
     # Falls back to the hardcoded "default" agent when omitted.
     # agent:
@@ -42,7 +42,7 @@ data:
     #   verification: "verification-agent"
 
     # Per-step tool overrides. When set, these replace the shared tools for that
-    # step on the Proposal (maps to spec.{analysis,execution,verification}.tools).
+    # step on the AgenticRun (maps to spec.{analysis,execution,verification}.tools).
     # analysis:
     #   tools:
     #     skills:

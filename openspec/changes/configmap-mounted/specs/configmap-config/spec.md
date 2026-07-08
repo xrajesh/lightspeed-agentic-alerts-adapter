@@ -14,4 +14,4 @@
 
 ### Requirement: Resolve the adapter namespace from the environment
 **Reason**: The adapter no longer reads ConfigMaps via the Kubernetes API, so the namespace is irrelevant. The config file path is hardcoded.
-**Migration**: The `POD_NAMESPACE` environment variable is no longer used for config loading. It may still be used for other purposes (e.g., Proposal creation namespace).
+**Migration**: The `POD_NAMESPACE` environment variable is no longer used for config loading. It may still be used for other purposes (e.g., AgenticRun creation namespace).

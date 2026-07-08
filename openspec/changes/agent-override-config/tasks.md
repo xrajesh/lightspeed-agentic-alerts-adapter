@@ -6,7 +6,7 @@
 - [x] 1.4 Parse the agent section in `LoadFromFile` and populate `cfg.Agent` from the deserialized `configFile`
 - [x] 1.5 Add tests for agent config parsing: global only, per-step only, mixed, missing section, empty strings
 
-## 2. Proposal Building
+## 2. AgenticRun Building
 
 - [x] 2.1 Add `config.AgentConfig` parameter to `Build()` function signature
 - [x] 2.2 Add `resolveAgent` helper that implements the three-level fallback: per-step → global default → hardcoded `"default"`
