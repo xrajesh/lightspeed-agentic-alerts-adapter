@@ -52,9 +52,9 @@ func New(alerts AlertSource, proposals ProposalClient, cfg config.Config, logger
 // Run starts the poll loop, blocking until the context is cancelled.
 func (a *Adapter) Run(ctx context.Context) error {
 	a.logger.Info("adapter started",
-		"pollInterval", a.cfg.PollInterval,
-		"initialDelay", a.cfg.InitialDelay,
-		"cooldownWindow", a.cfg.CooldownWindow,
+		"pollInterval", a.cfg.PollInterval.String(),
+		"initialDelay", a.cfg.InitialDelay.String(),
+		"cooldownWindow", a.cfg.CooldownWindow.String(),
 		"allowedReceivers", a.cfg.AllowedReceivers,
 	)
 
