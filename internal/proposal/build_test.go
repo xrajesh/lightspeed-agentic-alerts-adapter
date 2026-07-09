@@ -49,7 +49,7 @@ func TestBuild(t *testing.T) {
 		{
 			name:              "namespaced alert",
 			alert:             makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical"),
-			expectedName:      "kubepodcrashlooping-production-abcdef12",
+			expectedName:      "kubepodcrashlooping-production-895c8977",
 			expectedNamespace: proposalNamespace,
 			expectedTargetNS:  []string{"production"},
 			expectedLabels: map[string]string{
@@ -66,7 +66,7 @@ func TestBuild(t *testing.T) {
 				delete(a.Labels, "namespace")
 				return a
 			}(),
-			expectedName:      "clusterversionavailable-ff00ff00",
+			expectedName:      "clusterversionavailable-895c8977",
 			expectedNamespace: proposalNamespace,
 			expectedTargetNS:  nil,
 			expectedLabels: map[string]string{
@@ -79,7 +79,7 @@ func TestBuild(t *testing.T) {
 		{
 			name:              "short fingerprint (less than 8 chars)",
 			alert:             makeAlert("TestAlert", "ns", "abc", "warning"),
-			expectedName:      "testalert-ns-abc",
+			expectedName:      "testalert-ns-895c8977",
 			expectedNamespace: proposalNamespace,
 			expectedTargetNS:  []string{"ns"},
 			expectedLabels: map[string]string{
@@ -138,6 +138,21 @@ func TestBuildNilFingerprint(t *testing.T) {
 	}
 
 	want := "fingerprint is nil"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err, want)
+	}
+}
+
+func TestBuildNilStartsAt(t *testing.T) {
+	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
+	a.StartsAt = nil
+
+	_, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	if err == nil {
+		t.Fatal("expected error for nil startsAt, got nil")
+	}
+
+	want := "startsAt is nil"
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
 	}
@@ -270,60 +285,70 @@ func TestBuildRequestWithoutRunbook(t *testing.T) {
 }
 
 func TestBuildName(t *testing.T) {
+	testTime := time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC)
+	hash := startsAtHash(testTime)
+
 	tests := []struct {
-		name        string
-		alertName   string
-		namespace   string
-		fingerprint string
-		expected    string
+		name      string
+		alertName string
+		namespace string
+		startsAt  time.Time
+		expected  string
 	}{
 		{
-			name:        "standard namespaced",
-			alertName:   "KubePodCrashLooping",
-			namespace:   "production",
-			fingerprint: "abcdef1234567890",
-			expected:    "kubepodcrashlooping-production-abcdef12",
+			name:      "standard namespaced",
+			alertName: "KubePodCrashLooping",
+			namespace: "production",
+			startsAt:  testTime,
+			expected:  "kubepodcrashlooping-production-" + hash,
 		},
 		{
-			name:        "cluster-scoped",
-			alertName:   "ClusterReady",
-			namespace:   "",
-			fingerprint: "ff00ff00ff00ff00",
-			expected:    "clusterready-ff00ff00",
+			name:      "cluster-scoped",
+			alertName: "ClusterReady",
+			namespace: "",
+			startsAt:  testTime,
+			expected:  "clusterready-" + hash,
 		},
 		{
-			name:        "invalid characters replaced",
-			alertName:   "Alert_With:Special/Chars",
-			namespace:   "my ns!",
-			fingerprint: "aabbccdd",
-			expected:    "alert-with-special-chars-my-ns--aabbccdd",
+			name:      "invalid characters replaced",
+			alertName: "Alert_With:Special/Chars",
+			namespace: "my ns!",
+			startsAt:  testTime,
+			expected:  "alert-with-special-chars-my-ns--" + hash,
 		},
 		{
-			name:        "long name truncated to 63 chars with namespace",
-			alertName:   "AlertmanagerReceiversNotConfigured",
-			namespace:   "openshift-monitoring",
-			fingerprint: "72bc0ebbaa112233",
-			expected:    "alertmanagerreceiversnotconfigure-openshift-monitoring-72bc0ebb",
+			name:      "long name truncated to 63 chars with namespace",
+			alertName: "AlertmanagerReceiversNotConfigured",
+			namespace: "openshift-monitoring",
+			startsAt:  testTime,
+			expected:  "alertmanagerreceiversnotconfigure-openshift-monitoring-" + hash,
 		},
 		{
-			name:        "long alert name truncated with namespace",
-			alertName:   strings.Repeat("a", 250),
-			namespace:   "ns",
-			fingerprint: "12345678",
-			expected:    strings.Repeat("a", maxLabelValueLen-len("-ns-12345678")) + "-ns-12345678",
+			name:      "long alert name truncated with namespace",
+			alertName: strings.Repeat("a", 250),
+			namespace: "ns",
+			startsAt:  testTime,
+			expected:  strings.Repeat("a", maxLabelValueLen-len("-ns-"+hash)) + "-ns-" + hash,
 		},
 		{
-			name:        "long alert name truncated without namespace",
-			alertName:   strings.Repeat("a", 250),
-			namespace:   "",
-			fingerprint: "12345678",
-			expected:    strings.Repeat("a", maxLabelValueLen-len("-12345678")) + "-12345678",
+			name:      "long alert name truncated without namespace",
+			alertName: strings.Repeat("a", 250),
+			namespace: "",
+			startsAt:  testTime,
+			expected:  strings.Repeat("a", maxLabelValueLen-len("-"+hash)) + "-" + hash,
+		},
+		{
+			name:      "different startsAt produces different name",
+			alertName: "KubePodCrashLooping",
+			namespace: "production",
+			startsAt:  testTime.Add(time.Hour),
+			expected:  "kubepodcrashlooping-production-" + startsAtHash(testTime.Add(time.Hour)),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildName(tt.alertName, tt.namespace, tt.fingerprint)
+			got := buildName(tt.alertName, tt.namespace, tt.startsAt)
 			if got != tt.expected {
 				t.Errorf("buildName() = %q, want %q", got, tt.expected)
 			}

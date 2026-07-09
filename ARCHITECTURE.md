@@ -81,7 +81,7 @@ This means restarts, upgrades, and pod rescheduling are inherently safe. The ada
 
 ### Alert-to-Proposal Cardinality
 
-The adapter maintains a **1:1 relationship** between alerts and Proposals. Each unique firing alert (identified by its AlertManager fingerprint) maps to exactly one Proposal. There is no alert grouping — if 10 alerts are firing, 10 Proposals are created (subject to deduplication checks).
+The adapter maintains a **1:1 relationship** between alert occurrences and Proposals. Each firing alert occurrence (identified by its AlertManager fingerprint and `startsAt` timestamp) maps to exactly one Proposal. There is no alert grouping — if 10 alerts are firing, 10 Proposals are created (subject to deduplication checks). If the same alert resolves and fires again (new `startsAt`), it produces a new Proposal with a distinct name.
 
 ### Poll Loop
 
@@ -111,27 +111,29 @@ Two configurable parameters control deduplication. Both are configurable via the
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `InitialDelay` | Minimum time an alert must be firing before the adapter creates a Proposal. Filters transient alerts that resolve on their own. Uses the alert's `startsAt` field from AlertManager — no in-memory tracking needed. | 5 minutes |
-| `CooldownWindow` | After a Proposal reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new Proposal for the same alert fingerprint. Prevents flooding for flapping alerts. Uses the terminal Proposal's condition timestamps. | 1 hour |
+| `CooldownWindow` | After a Proposal reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new Proposal for the same alert (matched by fingerprint label). Prevents flooding for flapping alerts. Uses the terminal Proposal's condition timestamps. | 1 hour |
 
 ### Race Condition Prevention
 
-The adapter uses **deterministic Proposal naming** derived from alert metadata. The fingerprint is not computed by the adapter — AlertManager computes it as a hash of the alert's label set and returns it in the `GET /api/v2/alerts` response.
+The adapter uses **deterministic Proposal naming** derived from alert metadata. The name includes an 8-character SHA-256 hash of the alert's `startsAt` timestamp (RFC 3339 UTC), ensuring each alert occurrence gets a unique Proposal name.
 
 ```
-{alertname}-{namespace}-{fingerprint[:8]}
+{alertname}-{namespace}-{startsAtHash}
 ```
 
 Examples:
-- `kubepodcrashlooping-production-a1b2c3d4`
-- `etcdhighfsyncdurations--f9e8d7c6` (no namespace for cluster-scoped alerts)
+- `kubepodcrashlooping-production-895c8977`
+- `etcdhighfsyncdurations-a3f1b2c4` (no namespace for cluster-scoped alerts)
 
-Components are sanitized to conform to DNS subdomain rules (RFC 1123): lowercased, non-alphanumeric characters replaced, truncated to fit the 253-character limit.
+Components are sanitized to conform to DNS subdomain rules (RFC 1123): lowercased, non-alphanumeric characters replaced, truncated to fit the 63-character limit.
+
+Deduplication uses the `alert-fingerprint` label (first 8 chars of AlertManager's fingerprint, a hash of the alert's label set) to match alerts to existing Proposals. The fingerprint is not part of the Proposal name — it is only stored as a label for matching.
 
 ### Alert to Proposal Mapping
 
 #### Proposal Name
 
-Deterministic: `{alertname}-{namespace}-{fingerprint[:8]}` (see above).
+Deterministic: `{alertname}-{namespace}-{startsAtHash}` (see above).
 
 #### Namespace
 
@@ -384,6 +386,6 @@ Tools/skills configuration is also supported — see [README.md](README.md#confi
 - **Prometheus metrics**: `alerts_adapter_polls_total`, `proposals_created_total`, `errors_total`, `poll_duration_seconds`.
 - **Adapter-specific analysis output schema**: Inject custom fields into `analysisOutput.schema` for alert correlation, affected services topology.
 - **Workflow selection**: Choose different workflow patterns (advisory, assisted, full remediation) based on alert labels.
-- **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic Proposal naming, concurrent replicas attempting to create the same Proposal would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
+- **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic Proposal naming (based on alert identity and startsAt), concurrent replicas attempting to create the same Proposal would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
 - **Token budgets**: Protect against alert storms hitting model rate limits. At minimum add jitter to Proposal creation; consider an adapter-level or OLS-level token budget to prevent runaway costs.
 - **Retry clarity for unparseable alerts**: When an alert cannot be parsed, the adapter skips it but will keep retrying on each subsequent poll until the alert disappears. Consider explicit retry-on-next-interval semantics with backoff or a skip list.

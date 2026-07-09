@@ -16,7 +16,7 @@ data:
 
     # cooldownWindow: after a Proposal reaches a terminal state (Completed, Failed,
     # Denied, Escalated), how long to wait before creating a new Proposal for the
-    # same alert fingerprint. Prevents flooding for flapping alerts.
+    # same alert (matched by fingerprint label). Prevents flooding for flapping alerts.
     # Default: 1h
     cooldownWindow: 1h
     allowedReceivers:

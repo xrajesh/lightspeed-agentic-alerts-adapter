@@ -7,11 +7,11 @@ The system SHALL convert an Alertmanager `GettableAlert` into a `Proposal` custo
 
 #### Scenario: Alert with namespace label
 - **WHEN** the alert has a `namespace` label
-- **THEN** the Proposal name is `{alertname}-{namespace}-{fingerprint[:8]}`, `spec.targetNamespaces` is set to `[namespace]`, and the Proposal is created in `openshift-lightspeed`
+- **THEN** the Proposal name is `{alertname}-{namespace}-{startsAtHash}`, `spec.targetNamespaces` is set to `[namespace]`, and the Proposal is created in `openshift-lightspeed`
 
 #### Scenario: Cluster-scoped alert (no namespace)
 - **WHEN** the alert has no `namespace` label
-- **THEN** the Proposal name is `{alertname}-{fingerprint[:8]}`, `spec.targetNamespaces` is omitted, and the Proposal is created in `openshift-lightspeed`
+- **THEN** the Proposal name is `{alertname}-{startsAtHash}`, `spec.targetNamespaces` is omitted, and the Proposal is created in `openshift-lightspeed`
 
 #### Scenario: Deterministic naming produces idempotent creates
 - **WHEN** the same alert is passed to Build twice
@@ -26,7 +26,7 @@ The system SHALL sanitize alert values to conform to Kubernetes naming and label
 
 #### Scenario: Proposal name exceeds 63 characters
 - **WHEN** the computed name would exceed 63 characters (the Kubernetes label value limit, since the agentic operator uses the Proposal name as a label value)
-- **THEN** the alertname component is truncated to fit within the 63-character limit while preserving the namespace and fingerprint suffix
+- **THEN** the alertname component is truncated to fit within the 63-character limit while preserving the namespace and startsAt hash suffix
 
 #### Scenario: Label value exceeds 63 characters
 - **WHEN** an alert field used as a label value exceeds 63 characters
