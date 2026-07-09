@@ -78,7 +78,7 @@ func makeAlertWithSeverity(name, fingerprint string, startsAt time.Time, severit
 	return &models.GettableAlert{
 		Fingerprint: &fingerprint,
 		StartsAt:    &sa,
-		Receivers:   []*models.Receiver{{Name: ptr("Critical")}},
+		Receivers:   []*models.ReceiverReference{{Name: ptr("Critical")}},
 		Alert: models.Alert{
 			Labels: labels,
 		},
@@ -242,7 +242,7 @@ func TestReconcile(t *testing.T) {
 			alerts: models.GettableAlerts{
 				{
 					Fingerprint: ptr("abcdef1234567890"),
-					Receivers:   []*models.Receiver{{Name: ptr("Critical")}},
+					Receivers:   []*models.ReceiverReference{{Name: ptr("Critical")}},
 					Alert: models.Alert{
 						Labels: models.LabelSet{"alertname": "HighCPU"},
 					},
@@ -262,7 +262,7 @@ func TestReconcile(t *testing.T) {
 			alerts: models.GettableAlerts{
 				{
 					StartsAt:  func() *strfmt.DateTime { dt := strfmt.DateTime(oldEnough); return &dt }(),
-					Receivers: []*models.Receiver{{Name: ptr("Critical")}},
+					Receivers: []*models.ReceiverReference{{Name: ptr("Critical")}},
 					Alert: models.Alert{
 						Labels: models.LabelSet{"alertname": "HighCPU"},
 					},
@@ -328,7 +328,7 @@ func TestSkipSeverity(t *testing.T) {
 
 	t.Run("missing severity label is not skipped", func(t *testing.T) {
 		alert := &models.GettableAlert{
-			Receivers: []*models.Receiver{{Name: ptr("Critical")}},
+			Receivers: []*models.ReceiverReference{{Name: ptr("Critical")}},
 			Alert: models.Alert{
 				Labels: models.LabelSet{"alertname": "TestAlert"},
 			},
@@ -342,37 +342,37 @@ func TestSkipSeverity(t *testing.T) {
 func TestSkipReceiver(t *testing.T) {
 	tests := []struct {
 		name      string
-		receivers []*models.Receiver
+		receivers []*models.ReceiverReference
 		allowed   []string
 		want      bool
 	}{
 		{
 			name:      "matching receiver",
-			receivers: []*models.Receiver{{Name: ptr("Critical")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("Critical")}},
 			allowed:   []string{"critical"},
 			want:      false,
 		},
 		{
 			name:      "no matching receiver",
-			receivers: []*models.Receiver{{Name: ptr("Default")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("Default")}},
 			allowed:   []string{"critical"},
 			want:      true,
 		},
 		{
 			name:      "one of multiple receivers matches",
-			receivers: []*models.Receiver{{Name: ptr("Default")}, {Name: ptr("Critical")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("Default")}, {Name: ptr("Critical")}},
 			allowed:   []string{"critical"},
 			want:      false,
 		},
 		{
 			name:      "case-insensitive match",
-			receivers: []*models.Receiver{{Name: ptr("CRITICAL")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("CRITICAL")}},
 			allowed:   []string{"critical"},
 			want:      false,
 		},
 		{
 			name:      "empty receivers list",
-			receivers: []*models.Receiver{},
+			receivers: []*models.ReceiverReference{},
 			allowed:   []string{"critical"},
 			want:      true,
 		},
@@ -384,25 +384,25 @@ func TestSkipReceiver(t *testing.T) {
 		},
 		{
 			name:      "empty allowlist skips all",
-			receivers: []*models.Receiver{{Name: ptr("Critical")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("Critical")}},
 			allowed:   []string{},
 			want:      true,
 		},
 		{
 			name:      "multiple allowed receivers",
-			receivers: []*models.Receiver{{Name: ptr("PagerDuty")}},
+			receivers: []*models.ReceiverReference{{Name: ptr("PagerDuty")}},
 			allowed:   []string{"critical", "pagerduty"},
 			want:      false,
 		},
 		{
 			name:      "nil receiver entry skipped",
-			receivers: []*models.Receiver{nil, {Name: ptr("Critical")}},
+			receivers: []*models.ReceiverReference{nil, {Name: ptr("Critical")}},
 			allowed:   []string{"critical"},
 			want:      false,
 		},
 		{
 			name:      "nil receiver name skipped",
-			receivers: []*models.Receiver{{Name: nil}, {Name: ptr("Critical")}},
+			receivers: []*models.ReceiverReference{{Name: nil}, {Name: ptr("Critical")}},
 			allowed:   []string{"critical"},
 			want:      false,
 		},
