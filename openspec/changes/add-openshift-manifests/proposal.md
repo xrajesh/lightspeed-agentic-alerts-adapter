@@ -5,7 +5,7 @@ The adapter has no deployment manifests yet. The ARCHITECTURE.md defines the int
 ## What Changes
 
 - Add a `manifests/` directory with all Kubernetes/OpenShift resource definitions needed to deploy the adapter.
-- Include: Namespace, ServiceAccount, Deployment, RBAC (RoleBinding for AlertManager access, ClusterRole + ClusterRoleBinding for Proposal management).
+- Include: Namespace, ServiceAccount, Deployment, RBAC (RoleBinding for AlertManager access, ClusterRole + ClusterRoleBinding for AgenticRun management).
 - Follow the resource specifications already defined in ARCHITECTURE.md.
 
 ## Capabilities
@@ -22,4 +22,4 @@ The adapter has no deployment manifests yet. The ARCHITECTURE.md defines the int
 - No code changes — manifests only.
 - Depends on the container image being available at the registry path specified in the Deployment.
 - Depends on the `monitoring-alertmanager-view` Role existing in `openshift-monitoring` (provided by the OpenShift monitoring stack).
-- Depends on the `agentic.openshift.io` Proposal CRD being installed on the cluster.
+- Depends on the `agentic.openshift.io` AgenticRun CRD being installed on the cluster.

@@ -1,11 +1,11 @@
 ## Context
 
-The adapter's reconcile loop processes all firing alerts from AlertManager, applying three dedup filters (initial delay, active proposal, cooldown). There is no filter based on alert severity. Prometheus alerts carry a `severity` label with common values: `critical`, `warning`, `info`, and `none`. Low-severity alerts (`info`, `none`) are informational and should not trigger automated remediation.
+The adapter's reconcile loop processes all firing alerts from AlertManager, applying three dedup filters (initial delay, active AgenticRun, cooldown). There is no filter based on alert severity. Prometheus alerts carry a `severity` label with common values: `critical`, `warning`, `info`, and `none`. Low-severity alerts (`info`, `none`) are informational and should not trigger automated remediation.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Skip alerts with severity `none` or `info` before any Proposal processing.
+- Skip alerts with severity `none` or `info` before any AgenticRun processing.
 - Log skipped alerts at debug level for observability.
 - Keep the filter consistent with the existing skip pattern in the reconcile loop.
 
@@ -17,7 +17,7 @@ The adapter's reconcile loop processes all firing alerts from AlertManager, appl
 
 ### 1. Filter placement: first check in the reconcile loop
 
-The severity filter will be the first skip check in the reconcile loop, before `skipInitialDelay`. Rationale: severity is a static property of the alert — checking it first avoids unnecessary work in downstream filters (initial delay, active proposal lookup, cooldown). This is the cheapest check.
+The severity filter will be the first skip check in the reconcile loop, before `skipInitialDelay`. Rationale: severity is a static property of the alert — checking it first avoids unnecessary work in downstream filters (initial delay, active AgenticRun lookup, cooldown). This is the cheapest check.
 
 **Alternative considered:** Filtering in `alertmanager.GetAlerts()` after the API call. Rejected because filtering logic belongs in the adapter (where all other skip decisions live), not in the API client.
 

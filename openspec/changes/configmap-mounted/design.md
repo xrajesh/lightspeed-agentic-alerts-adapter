@@ -44,7 +44,7 @@ The `Role` and `RoleBinding` for ConfigMap `get` access are deleted from `manife
 
 With no ConfigMap API calls, `corev1.AddToScheme` is no longer needed in `main.go`.
 
-**Rationale:** The `corev1` scheme was only registered to support the `client.Get` call for the ConfigMap. Proposal CRs use only the `agenticv1alpha1` scheme.
+**Rationale:** The `corev1` scheme was only registered to support the `client.Get` call for the ConfigMap. AgenticRun CRs use only the `agenticv1alpha1` scheme.
 
 ## Risks / Trade-offs
 

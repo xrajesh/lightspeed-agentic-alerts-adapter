@@ -1,13 +1,13 @@
 ## Purpose
-Continuously poll AlertManager for firing alerts and create Proposal CRs for new alerts, with stateless deduplication to avoid duplicate or premature Proposals.
+Continuously poll AlertManager for firing alerts and create AgenticRun CRs for new alerts, with stateless deduplication to avoid duplicate or premature AgenticRuns.
 
 ## Requirements
 ### Requirement: Poll AlertManager on a fixed interval
-The system SHALL read operational parameters (`pollInterval`, `initialDelay`, `cooldownWindow`) from the `ConfigSource` at the start of each reconcile cycle and use them for that cycle's filtering and deduplication rules. The default poll interval is 30 seconds. When the loaded `pollInterval` differs from the current ticker interval, the system SHALL reset the ticker to the new interval. The filter order SHALL be: receiver allowlist → severity → initial delay → active proposal → cooldown.
+The system SHALL read operational parameters (`pollInterval`, `initialDelay`, `cooldownWindow`) from the `ConfigSource` at the start of each reconcile cycle and use them for that cycle's filtering and deduplication rules. The default poll interval is 30 seconds. When the loaded `pollInterval` differs from the current ticker interval, the system SHALL reset the ticker to the new interval. The filter order SHALL be: receiver allowlist → severity → initial delay → active AgenticRun → cooldown.
 
 #### Scenario: Normal poll cycle
 - **WHEN** the poll interval elapses
-- **THEN** the system fetches alerts from AlertManager, lists existing Proposals, applies receiver filtering then dedup rules, and creates Proposals for qualifying alerts
+- **THEN** the system fetches alerts from AlertManager, lists existing AgenticRuns, applies receiver filtering then dedup rules, and creates AgenticRuns for qualifying alerts
 
 #### Scenario: Configuration loaded each cycle
 - **WHEN** a reconcile cycle begins
@@ -22,11 +22,11 @@ The system SHALL read operational parameters (`pollInterval`, `initialDelay`, `c
 - **THEN** the system logs the error and skips the cycle; the next poll retries
 
 #### Scenario: Kubernetes API unreachable during poll
-- **WHEN** the Kubernetes API returns an error during proposal listing or creation
+- **WHEN** the Kubernetes API returns an error during AgenticRun listing or creation
 - **THEN** the system logs the error and skips the cycle; the next poll retries
 
 ### Requirement: Skip transient alerts (initial delay)
-The system SHALL not create a Proposal for an alert that has been firing for less than 5 minutes, to filter out transient alerts that resolve on their own.
+The system SHALL not create an AgenticRun for an alert that has been firing for less than 5 minutes, to filter out transient alerts that resolve on their own.
 
 #### Scenario: Alert firing for less than initial delay
 - **WHEN** `now - alert.startsAt` is less than 5 minutes
@@ -36,26 +36,26 @@ The system SHALL not create a Proposal for an alert that has been firing for les
 - **WHEN** `now - alert.startsAt` is 5 minutes or more
 - **THEN** the alert passes the initial delay check
 
-### Requirement: Skip alerts with active Proposals
-The system SHALL not create a Proposal for an alert that already has an active (non-terminal) Proposal, identified by matching the alert fingerprint label.
+### Requirement: Skip alerts with active AgenticRuns
+The system SHALL not create an AgenticRun for an alert that already has an active (non-terminal) AgenticRun, identified by matching the alert fingerprint label.
 
-#### Scenario: Active proposal exists for alert
-- **WHEN** a Proposal with matching fingerprint label exists and its phase is Pending, Analyzing, Proposed, Executing, Verifying, or Escalating
+#### Scenario: Active AgenticRun exists for alert
+- **WHEN** an AgenticRun with matching fingerprint label exists and its phase is Pending, Analyzing, Proposed, Executing, Verifying, or Escalating
 - **THEN** the alert is skipped and logged at Debug level
 
-#### Scenario: No proposal exists for alert
-- **WHEN** no Proposal with matching fingerprint label exists
-- **THEN** the alert passes the active-proposal check
+#### Scenario: No AgenticRun exists for alert
+- **WHEN** no AgenticRun with matching fingerprint label exists
+- **THEN** the alert passes the active-run check
 
 ### Requirement: Skip alerts within cooldown window
-The system SHALL not create a Proposal for an alert that has a terminal Proposal (Completed, Failed, Denied, Escalated) within the cooldown window of 1 hour, to prevent flooding for flapping alerts.
+The system SHALL not create an AgenticRun for an alert that has a terminal AgenticRun (Completed, Failed, Denied, Escalated) within the cooldown window of 1 hour, to prevent flooding for flapping alerts.
 
-#### Scenario: Terminal proposal within cooldown
-- **WHEN** a Proposal with matching fingerprint label is in a terminal phase and its terminal condition's `LastTransitionTime` is less than 1 hour ago
+#### Scenario: Terminal AgenticRun within cooldown
+- **WHEN** an AgenticRun with matching fingerprint label is in a terminal phase and its terminal condition's `LastTransitionTime` is less than 1 hour ago
 - **THEN** the alert is skipped and logged at Debug level
 
-#### Scenario: Terminal proposal outside cooldown
-- **WHEN** a Proposal with matching fingerprint label is in a terminal phase and its terminal condition's `LastTransitionTime` is 1 hour or more ago
+#### Scenario: Terminal AgenticRun outside cooldown
+- **WHEN** an AgenticRun with matching fingerprint label is in a terminal phase and its terminal condition's `LastTransitionTime` is 1 hour or more ago
 - **THEN** the alert passes the cooldown check
 
 ### Requirement: Shut down gracefully on OS signals

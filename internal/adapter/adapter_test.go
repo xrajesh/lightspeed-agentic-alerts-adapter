@@ -25,20 +25,20 @@ func (f *fakeAlertSource) GetAlerts(_ context.Context) (models.GettableAlerts, e
 	return f.alerts, f.err
 }
 
-type fakeProposalClient struct {
-	proposals    []agenticv1alpha1.Proposal
-	listErr      error
-	createErr    error
-	created      []*agenticv1alpha1.Proposal
-	createCalls  int
-	wasCreated   *bool
+type fakeRunClient struct {
+	runs        []agenticv1alpha1.AgenticRun
+	listErr     error
+	createErr   error
+	created     []*agenticv1alpha1.AgenticRun
+	createCalls int
+	wasCreated  *bool
 }
 
-func (f *fakeProposalClient) ListProposals(_ context.Context) ([]agenticv1alpha1.Proposal, error) {
-	return f.proposals, f.listErr
+func (f *fakeRunClient) ListAgenticRuns(_ context.Context) ([]agenticv1alpha1.AgenticRun, error) {
+	return f.runs, f.listErr
 }
 
-func (f *fakeProposalClient) CreateProposal(_ context.Context, p *agenticv1alpha1.Proposal) (bool, error) {
+func (f *fakeRunClient) CreateAgenticRun(_ context.Context, p *agenticv1alpha1.AgenticRun) (bool, error) {
 	f.createCalls++
 	if f.createErr != nil {
 		return false, f.createErr
@@ -86,8 +86,8 @@ func makeAlertWithSeverity(name, fingerprint string, startsAt time.Time, severit
 	}
 }
 
-func makeProposal(fingerprint string, conditions []metav1.Condition) agenticv1alpha1.Proposal {
-	return agenticv1alpha1.Proposal{
+func makeRun(fingerprint string, conditions []metav1.Condition) agenticv1alpha1.AgenticRun {
+	return agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-" + fingerprint,
 			Namespace: "openshift-lightspeed",
@@ -96,7 +96,7 @@ func makeProposal(fingerprint string, conditions []metav1.Condition) agenticv1al
 				"agentic.openshift.io/source":            "alertmanager",
 			},
 		},
-		Status: agenticv1alpha1.ProposalStatus{
+		Status: agenticv1alpha1.AgenticRunStatus{
 			Conditions: conditions,
 		},
 	}
@@ -112,16 +112,16 @@ func TestReconcile(t *testing.T) {
 	tests := []struct {
 		name            string
 		alerts          models.GettableAlerts
-		proposals       []agenticv1alpha1.Proposal
+		runs            []agenticv1alpha1.AgenticRun
 		wantCreated     int
 		wantCreateCalls int
 		alertsErr       error
-		proposalsErr    error
+		runsErr         error
 		createErr       error
 		wasCreated      *bool
 	}{
 		{
-			name:            "new alert creates proposal",
+			name:            "new alert creates run",
 			alerts:          models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			wantCreated:     1,
 			wantCreateCalls: 1,
@@ -132,20 +132,20 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:   "active proposal skipped",
+			name:   "active run skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionUnknown},
 				}),
 			},
 			wantCreated: 0,
 		},
 		{
-			name:   "terminal proposal within cooldown skipped",
+			name:   "terminal run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionTrue},
 					{Type: "Executed", Status: metav1.ConditionTrue},
 					{
@@ -158,10 +158,10 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:   "terminal proposal past cooldown creates new proposal",
+			name:   "terminal run past cooldown creates new run",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionTrue},
 					{Type: "Executed", Status: metav1.ConditionTrue},
 					{
@@ -175,10 +175,10 @@ func TestReconcile(t *testing.T) {
 			wantCreateCalls: 1,
 		},
 		{
-			name:   "failed proposal within cooldown skipped",
+			name:   "failed run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{
 						Type:               "Analyzed",
 						Status:             metav1.ConditionFalse,
@@ -189,10 +189,10 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:   "denied proposal within cooldown skipped",
+			name:   "denied run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{
 						Type:               "Denied",
 						Status:             metav1.ConditionTrue,
@@ -203,10 +203,10 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:   "escalated proposal within cooldown skipped",
+			name:   "escalated run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposals: []agenticv1alpha1.Proposal{
-				makeProposal("abcdef12", []metav1.Condition{
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun("abcdef12", []metav1.Condition{
 					{
 						Type:               "Escalated",
 						Status:             metav1.ConditionTrue,
@@ -222,10 +222,10 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:         "kubernetes list error skips cycle",
-			alerts:       models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
-			proposalsErr: errors.New("api server unavailable"),
-			wantCreated:  0,
+			name:        "kubernetes list error skips cycle",
+			alerts:      models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
+			runsErr:     errors.New("api server unavailable"),
+			wantCreated: 0,
 		},
 		{
 			name: "kubernetes create error does not block other alerts",
@@ -251,7 +251,7 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:            "already exists proposal not counted as created",
+			name:            "already exists run not counted as created",
 			alerts:          models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			wasCreated:      ptr(false),
 			wantCreated:     0,
@@ -276,22 +276,22 @@ func TestReconcile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			as := &fakeAlertSource{alerts: tt.alerts, err: tt.alertsErr}
-			pc := &fakeProposalClient{proposals: tt.proposals, listErr: tt.proposalsErr, createErr: tt.createErr, wasCreated: tt.wasCreated}
+			rc := &fakeRunClient{runs: tt.runs, listErr: tt.runsErr, createErr: tt.createErr, wasCreated: tt.wasCreated}
 
 			a := &Adapter{
-				alerts:    as,
-				proposals: pc,
-				cfg:       defaultTestConfig(),
-				logger:    quietLogger(),
+				alerts: as,
+				runs:   rc,
+				cfg:    defaultTestConfig(),
+				logger: quietLogger(),
 			}
 
 			a.reconcile(context.Background())
 
-			if len(pc.created) != tt.wantCreated {
-				t.Errorf("created %d proposals, want %d", len(pc.created), tt.wantCreated)
+			if len(rc.created) != tt.wantCreated {
+				t.Errorf("created %d runs, want %d", len(rc.created), tt.wantCreated)
 			}
-			if pc.createCalls != tt.wantCreateCalls {
-				t.Errorf("CreateProposal called %d times, want %d", pc.createCalls, tt.wantCreateCalls)
+			if rc.createCalls != tt.wantCreateCalls {
+				t.Errorf("CreateAgenticRun called %d times, want %d", rc.createCalls, tt.wantCreateCalls)
 			}
 		})
 	}
@@ -443,19 +443,19 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			alert := makeAlertWithSeverity("HighCPU", "abcdef1234567890", oldEnough, tt.severity)
 			as := &fakeAlertSource{alerts: models.GettableAlerts{alert}}
-			pc := &fakeProposalClient{}
+			rc := &fakeRunClient{}
 
 			a := &Adapter{
-				alerts:    as,
-				proposals: pc,
-				cfg:       defaultTestConfig(),
-				logger:    quietLogger(),
+				alerts: as,
+				runs:   rc,
+				cfg:    defaultTestConfig(),
+				logger: quietLogger(),
 			}
 
 			a.reconcile(context.Background())
 
-			if pc.createCalls != tt.wantCreateCalls {
-				t.Errorf("CreateProposal called %d times, want %d", pc.createCalls, tt.wantCreateCalls)
+			if rc.createCalls != tt.wantCreateCalls {
+				t.Errorf("CreateAgenticRun called %d times, want %d", rc.createCalls, tt.wantCreateCalls)
 			}
 		})
 	}
@@ -465,9 +465,9 @@ func TestReconcileWithTools(t *testing.T) {
 	now := time.Now()
 	oldEnough := now.Add(-10 * time.Minute)
 
-	t.Run("shared tools set on proposal", func(t *testing.T) {
+	t.Run("shared tools set on run", func(t *testing.T) {
 		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
-		pc := &fakeProposalClient{}
+		rc := &fakeRunClient{}
 
 		cfg := config.Default()
 		cfg.AllowedReceivers = []string{"critical"}
@@ -476,18 +476,18 @@ func TestReconcileWithTools(t *testing.T) {
 		}
 
 		a := &Adapter{
-			alerts:    as,
-			proposals: pc,
-			cfg:       cfg,
-			logger:    quietLogger(),
+			alerts: as,
+			runs:   rc,
+			cfg:    cfg,
+			logger: quietLogger(),
 		}
 
 		a.reconcile(context.Background())
 
-		if len(pc.created) != 1 {
-			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		if len(rc.created) != 1 {
+			t.Fatalf("created %d runs, want 1", len(rc.created))
 		}
-		p := pc.created[0]
+		p := rc.created[0]
 		if len(p.Spec.Tools.Skills) != 1 {
 			t.Fatalf("spec.tools.skills length = %d, want 1", len(p.Spec.Tools.Skills))
 		}
@@ -496,9 +496,9 @@ func TestReconcileWithTools(t *testing.T) {
 		}
 	})
 
-	t.Run("per-step tools set on proposal", func(t *testing.T) {
+	t.Run("per-step tools set on run", func(t *testing.T) {
 		as := &fakeAlertSource{alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)}}
-		pc := &fakeProposalClient{}
+		rc := &fakeRunClient{}
 
 		cfg := config.Default()
 		cfg.AllowedReceivers = []string{"critical"}
@@ -510,18 +510,18 @@ func TestReconcileWithTools(t *testing.T) {
 		}
 
 		a := &Adapter{
-			alerts:    as,
-			proposals: pc,
-			cfg:       cfg,
-			logger:    quietLogger(),
+			alerts: as,
+			runs:   rc,
+			cfg:    cfg,
+			logger: quietLogger(),
 		}
 
 		a.reconcile(context.Background())
 
-		if len(pc.created) != 1 {
-			t.Fatalf("created %d proposals, want 1", len(pc.created))
+		if len(rc.created) != 1 {
+			t.Fatalf("created %d runs, want 1", len(rc.created))
 		}
-		p := pc.created[0]
+		p := rc.created[0]
 		if p.Spec.Tools.IsZero() != true {
 			t.Errorf("expected zero spec.tools, got %+v", p.Spec.Tools)
 		}
@@ -545,16 +545,16 @@ func TestReconcileWithTools(t *testing.T) {
 
 func TestRunExitsOnContextCancel(t *testing.T) {
 	as := &fakeAlertSource{}
-	pc := &fakeProposalClient{}
+	rc := &fakeRunClient{}
 
 	cfg := defaultTestConfig()
 	cfg.PollInterval = time.Hour
 
 	a := &Adapter{
-		alerts:    as,
-		proposals: pc,
-		cfg:       cfg,
-		logger:    quietLogger(),
+		alerts: as,
+		runs:   rc,
+		cfg:    cfg,
+		logger: quietLogger(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

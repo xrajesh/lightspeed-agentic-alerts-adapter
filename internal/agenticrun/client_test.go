@@ -1,4 +1,4 @@
-package proposal
+package agenticrun
 
 import (
 	"io"
@@ -24,32 +24,32 @@ func newTestClient(t *testing.T) *Client {
 	return &Client{Client: fc, logger: logger}
 }
 
-func TestCreateProposal(t *testing.T) {
+func TestCreateAgenticRun(t *testing.T) {
 	c := newTestClient(t)
 
-	p := &agenticv1alpha1.Proposal{
+	p := &agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-proposal-abcdef12",
-			Namespace: proposalNamespace,
+			Name:      "test-run-abcdef12",
+			Namespace: runNamespace,
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:  "test request",
-			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis: agenticv1alpha1.AgenticRunStep{Agent: defaultAgent},
 		},
 	}
 
-	created, err := c.CreateProposal(t.Context(), p)
+	created, err := c.CreateAgenticRun(t.Context(), p)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !created {
-		t.Fatal("expected created=true for new proposal")
+		t.Fatal("expected created=true for new run")
 	}
 
-	var got agenticv1alpha1.Proposal
+	var got agenticv1alpha1.AgenticRun
 	key := p.ObjectMeta
 	if err := c.Get(t.Context(), toObjectKey(key), &got); err != nil {
-		t.Fatalf("failed to get created proposal: %v", err)
+		t.Fatalf("failed to get created run: %v", err)
 	}
 
 	if got.Spec.Request != "test request" {
@@ -57,97 +57,97 @@ func TestCreateProposal(t *testing.T) {
 	}
 }
 
-func TestCreateProposalAlreadyExists(t *testing.T) {
+func TestCreateAgenticRunAlreadyExists(t *testing.T) {
 	c := newTestClient(t)
 
-	p := &agenticv1alpha1.Proposal{
+	p := &agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-proposal-abcdef12",
-			Namespace: proposalNamespace,
+			Name:      "test-run-abcdef12",
+			Namespace: runNamespace,
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:  "test request",
-			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis: agenticv1alpha1.AgenticRunStep{Agent: defaultAgent},
 		},
 	}
 
-	if _, err := c.CreateProposal(t.Context(), p); err != nil {
+	if _, err := c.CreateAgenticRun(t.Context(), p); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 
-	duplicate := &agenticv1alpha1.Proposal{
+	duplicate := &agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-proposal-abcdef12",
-			Namespace: proposalNamespace,
+			Name:      "test-run-abcdef12",
+			Namespace: runNamespace,
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:  "test request",
-			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis: agenticv1alpha1.AgenticRunStep{Agent: defaultAgent},
 		},
 	}
-	created, err := c.CreateProposal(t.Context(), duplicate)
+	created, err := c.CreateAgenticRun(t.Context(), duplicate)
 	if err != nil {
 		t.Fatalf("duplicate create should not error, got: %v", err)
 	}
 	if created {
-		t.Fatal("expected created=false for duplicate proposal")
+		t.Fatal("expected created=false for duplicate run")
 	}
 }
 
-func TestListProposals(t *testing.T) {
+func TestListAgenticRuns(t *testing.T) {
 	c := newTestClient(t)
 
-	matching := &agenticv1alpha1.Proposal{
+	matching := &agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "matching-abcdef12",
-			Namespace: proposalNamespace,
+			Namespace: runNamespace,
 			Labels:    map[string]string{labelSource: sourceValue},
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:  "matching",
-			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis: agenticv1alpha1.AgenticRunStep{Agent: defaultAgent},
 		},
 	}
-	unrelated := &agenticv1alpha1.Proposal{
+	unrelated := &agenticv1alpha1.AgenticRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "unrelated-12345678",
-			Namespace: proposalNamespace,
+			Namespace: runNamespace,
 			Labels:    map[string]string{labelSource: "other"},
 		},
-		Spec: agenticv1alpha1.ProposalSpec{
+		Spec: agenticv1alpha1.AgenticRunSpec{
 			Request:  "unrelated",
-			Analysis: agenticv1alpha1.ProposalStep{Agent: defaultAgent},
+			Analysis: agenticv1alpha1.AgenticRunStep{Agent: defaultAgent},
 		},
 	}
 
 	if err := c.Create(t.Context(), matching); err != nil {
-		t.Fatalf("creating matching proposal: %v", err)
+		t.Fatalf("creating matching run: %v", err)
 	}
 	if err := c.Create(t.Context(), unrelated); err != nil {
-		t.Fatalf("creating unrelated proposal: %v", err)
+		t.Fatalf("creating unrelated run: %v", err)
 	}
 
-	proposals, err := c.ListProposals(t.Context())
+	runs, err := c.ListAgenticRuns(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(proposals) != 1 {
-		t.Fatalf("got %d proposals, want 1", len(proposals))
+	if len(runs) != 1 {
+		t.Fatalf("got %d runs, want 1", len(runs))
 	}
-	if proposals[0].Name != "matching-abcdef12" {
-		t.Errorf("name = %q, want %q", proposals[0].Name, "matching-abcdef12")
+	if runs[0].Name != "matching-abcdef12" {
+		t.Errorf("name = %q, want %q", runs[0].Name, "matching-abcdef12")
 	}
 }
 
-func TestListProposalsEmpty(t *testing.T) {
+func TestListAgenticRunsEmpty(t *testing.T) {
 	c := newTestClient(t)
 
-	proposals, err := c.ListProposals(t.Context())
+	runs, err := c.ListAgenticRuns(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(proposals) != 0 {
-		t.Errorf("got %d proposals, want 0", len(proposals))
+	if len(runs) != 0 {
+		t.Errorf("got %d runs, want 0", len(runs))
 	}
 }
 

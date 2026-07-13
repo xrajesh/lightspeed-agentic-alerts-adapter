@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **lightspeed-agentic-alerts-adapter** is a standalone component that bridges OpenShift cluster alerts into the Lightspeed Agentic system. It polls the in-cluster AlertManager API for firing alerts and creates `Proposal` CRs (`agentic.openshift.io/v1alpha1`) to trigger automated analysis, remediation, and verification workflows.
+The **lightspeed-agentic-alerts-adapter** is a standalone component that bridges OpenShift cluster alerts into the Lightspeed Agentic system. It polls the in-cluster AlertManager API for firing alerts and creates `AgenticRun` CRs (`agentic.openshift.io/v1alpha1`) to trigger automated analysis, remediation, and verification workflows.
 
 The adapter is a stateless, single-purpose binary written in Go 1.26. It runs as a Deployment in the same namespace as the Lightspeed Agentic operator (`openshift-lightspeed`).
 
@@ -11,16 +11,16 @@ The adapter is a stateless, single-purpose binary written in Go 1.26. It runs as
 ### Functional
 
 1. **Poll AlertManager** for currently firing alerts at a configurable interval.
-2. **Create Proposals** for firing alerts that pass deduplication checks.
-3. **Deduplicate** to avoid creating multiple Proposals for the same alert or for intermittent/flapping alerts.
-4. **Map alert data** into Proposal spec fields using a structured request template.
+2. **Create AgenticRuns** for firing alerts that pass deduplication checks.
+3. **Deduplicate** to avoid creating multiple AgenticRuns for the same alert or for intermittent/flapping alerts.
+4. **Map alert data** into AgenticRun spec fields using a structured request template.
 5. **Handle restarts gracefully** — no missed alerts, no duplicates after restart.
 
 ### Non-functional
 
 1. **Stateless** — no persistent storage, no in-memory state required for correctness.
 2. **Idempotent** — safe to restart at any time; safe under concurrent execution.
-3. **Create-only** — the adapter creates Proposals but never modifies or deletes them. The operator owns the Proposal lifecycle.
+3. **Create-only** — the adapter creates AgenticRuns but never modifies or deletes them. The operator owns the AgenticRun lifecycle.
 4. **Observable** — structured logging and health/readiness probes. Prometheus metrics deferred to a future iteration.
 5. **Container-ready** — include a `Containerfile` to build the adapter image and deploy it in an OpenShift cluster.
 
@@ -45,7 +45,7 @@ The adapter is a stateless, single-purpose binary written in Go 1.26. It runs as
                          │  alerts-adapter              │
                          │  (diff firing vs existing)   │
                          │          │                   │
-                         │     CREATE Proposal CR       │
+                         │     CREATE AgenticRun CR       │
                          │          │                   │
                          │          ▼                   │
                          │  Lightspeed Agentic Operator │
@@ -73,15 +73,15 @@ The polling approach also requires no AlertManager configuration changes (no `Al
 The adapter maintains **no internal state**. On every poll cycle, it computes a fresh diff between two authoritative sources:
 
 1. **AlertManager API** — what's currently firing.
-2. **Kubernetes API** — what Proposals already exist (filtered by labels).
+2. **Kubernetes API** — what AgenticRuns already exist (filtered by labels).
 
 This means restarts, upgrades, and pod rescheduling are inherently safe. The adapter rebuilds its understanding of the world on every poll cycle.
 
 ## Design
 
-### Alert-to-Proposal Cardinality
+### Alert-to-AgenticRun Cardinality
 
-The adapter maintains a **1:1 relationship** between alert occurrences and Proposals. Each firing alert occurrence (identified by its AlertManager fingerprint and `startsAt` timestamp) maps to exactly one Proposal. There is no alert grouping — if 10 alerts are firing, 10 Proposals are created (subject to deduplication checks). If the same alert resolves and fires again (new `startsAt`), it produces a new Proposal with a distinct name.
+The adapter maintains a **1:1 relationship** between alert occurrences and AgenticRuns. Each firing alert occurrence (identified by its AlertManager fingerprint and `startsAt` timestamp) maps to exactly one AgenticRun. There is no alert grouping — if 10 alerts are firing, 10 AgenticRuns are created (subject to deduplication checks). If the same alert resolves and fires again (new `startsAt`), it produces a new AgenticRun with a distinct name.
 
 ### Poll Loop
 
@@ -90,14 +90,14 @@ The adapter runs a single loop:
 ```
 every <pollInterval> (default 30s):
     1. GET /api/v2/alerts?active=true&silenced=false&inhibited=false → firing alerts
-    2. LIST Proposals (label: source=alertmanager) → existing proposals
+    2. LIST AgenticRuns (label: source=alertmanager) → existing AgenticRuns
     3. For each firing alert:
         a. Receivers not in allowedReceivers?               → skip (not routed to allowed receiver)
         b. Severity is "none" or "info"?                    → skip (low severity)
         c. now - alert.startsAt < initialDelay?             → skip (too transient)
-        d. Active Proposal with same fingerprint?           → skip (already handling)
-        e. Terminal Proposal within cooldownWindow?         → skip (too soon to retry)
-        f. Else → CREATE Proposal
+        d. Active AgenticRun with same fingerprint?          → skip (already handling)
+        e. Terminal AgenticRun within cooldownWindow?       → skip (too soon to retry)
+        f. Else → CREATE AgenticRun
 ```
 
 **Poll interval**: 30 seconds by default, configurable via ConfigMap. The poll interval is fixed for the lifetime of the process; changes require a pod restart (triggered by the operator). The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
@@ -110,12 +110,12 @@ Two configurable parameters control deduplication. Both are configurable via the
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `InitialDelay` | Minimum time an alert must be firing before the adapter creates a Proposal. Filters transient alerts that resolve on their own. Uses the alert's `startsAt` field from AlertManager — no in-memory tracking needed. | 5 minutes |
-| `CooldownWindow` | After a Proposal reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new Proposal for the same alert (matched by fingerprint label). Prevents flooding for flapping alerts. Uses the terminal Proposal's condition timestamps. | 1 hour |
+| `InitialDelay` | Minimum time an alert must be firing before the adapter creates an AgenticRun. Filters transient alerts that resolve on their own. Uses the alert's `startsAt` field from AlertManager — no in-memory tracking needed. | 5 minutes |
+| `CooldownWindow` | After an AgenticRun reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new AgenticRun for the same alert (matched by fingerprint label). Prevents flooding for flapping alerts. Uses the terminal AgenticRun's condition timestamps. | 1 hour |
 
 ### Race Condition Prevention
 
-The adapter uses **deterministic Proposal naming** derived from alert metadata. The name includes an 8-character SHA-256 hash of the alert's `startsAt` timestamp (RFC 3339 UTC), ensuring each alert occurrence gets a unique Proposal name.
+The adapter uses **deterministic AgenticRun naming** derived from alert metadata. The name includes an 8-character SHA-256 hash of the alert's `startsAt` timestamp (RFC 3339 UTC), ensuring each alert occurrence gets a unique AgenticRun name.
 
 ```
 {alertname}-{namespace}-{startsAtHash}
@@ -127,21 +127,21 @@ Examples:
 
 Components are sanitized to conform to DNS subdomain rules (RFC 1123): lowercased, non-alphanumeric characters replaced, truncated to fit the 63-character limit.
 
-Deduplication uses the `alert-fingerprint` label (first 8 chars of AlertManager's fingerprint, a hash of the alert's label set) to match alerts to existing Proposals. The fingerprint is not part of the Proposal name — it is only stored as a label for matching.
+Deduplication uses the `alert-fingerprint` label (first 8 chars of AlertManager's fingerprint, a hash of the alert's label set) to match alerts to existing AgenticRuns. The fingerprint is not part of the AgenticRun name — it is only stored as a label for matching.
 
-### Alert to Proposal Mapping
+### Alert to AgenticRun Mapping
 
-#### Proposal Name
+#### AgenticRun Name
 
 Deterministic: `{alertname}-{namespace}-{startsAtHash}` (see above).
 
 #### Namespace
 
-Proposals are created in the alert's source namespace — i.e., the namespace from the alert's `namespace` label. For cluster-scoped alerts with no namespace label, Proposals are created in the operator namespace (`openshift-lightspeed`) as a fallback. The operator controller watches Proposals across all namespaces, so this works without additional configuration. The adapter's ServiceAccount needs Proposal create/list/get RBAC across namespaces (ClusterRole instead of a namespace-scoped Role).
+AgenticRuns are created in the alert's source namespace — i.e., the namespace from the alert's `namespace` label. For cluster-scoped alerts with no namespace label, AgenticRuns are created in the operator namespace (`openshift-lightspeed`) as a fallback. The operator controller watches AgenticRuns across all namespaces, so this works without additional configuration. The adapter's ServiceAccount needs AgenticRun create/list/get RBAC across namespaces (ClusterRole instead of a namespace-scoped Role).
 
 #### spec.targetNamespaces
 
-Set to the alert's `namespace` label (matching the namespace where the Proposal is created). If the alert has no namespace label (cluster-scoped alerts), `targetNamespaces` is left empty. The operator grants cluster-scoped RBAC based on the analysis agent's output.
+Set to the alert's `namespace` label (matching the namespace where the AgenticRun is created). If the alert has no namespace label (cluster-scoped alerts), `targetNamespaces` is left empty. The operator grants cluster-scoped RBAC based on the analysis agent's output.
 
 #### spec.request
 
@@ -216,7 +216,7 @@ Labels are used for filtering and dedup queries. Annotations carry non-selectabl
 
 ### Alert Resolution Behavior
 
-When an alert resolves while its Proposal is still active (Analyzing, Executing, Verifying), the adapter does nothing. The Proposal continues to completion. Rationale:
+When an alert resolves while its AgenticRun is still active (Analyzing, Executing, Verifying), the adapter does nothing. The AgenticRun continues to completion. Rationale:
 
 - A self-resolved alert doesn't mean the underlying issue is fixed.
 - The analysis and remediation may still be valuable.
@@ -238,15 +238,15 @@ The adapter uses Go's standard library `log/slog` package with JSON output. Log 
 
 | Level | What gets logged |
 |-------|-----------------|
-| `Info` | Poll cycle start/end, Proposal created (with alert name and namespace), adapter startup/shutdown |
-| `Error` | AlertManager unreachable, Kubernetes API errors, Proposal creation failures (non-409) |
-| `Debug` | Alerts skipped due to initial delay, existing Proposal, or cooldown window (including the skip reason and alert fingerprint) |
+| `Info` | Poll cycle start/end, AgenticRun created (with alert name and namespace), adapter startup/shutdown |
+| `Error` | AlertManager unreachable, Kubernetes API errors, AgenticRun creation failures (non-409) |
+| `Debug` | Alerts skipped due to initial delay, existing AgenticRun, or cooldown window (including the skip reason and alert fingerprint) |
 
 ### Error Handling
 
 - **AlertManager unreachable**: Log the error, skip the poll cycle, retry on the next interval.
-- **Kubernetes API unreachable**: Log the error, skip Proposal creation, retry on the next interval.
-- **Proposal creation fails (non-409)**: Log the error with alert details. The alert will be retried on the next poll cycle since no Proposal exists for it.
+- **Kubernetes API unreachable**: Log the error, skip AgenticRun creation, retry on the next interval.
+- **AgenticRun creation fails (non-409)**: Log the error with alert details. The alert will be retried on the next poll cycle since no AgenticRun exists for it.
 - **Invalid alert data** (missing alertname, template rendering failure): Log and skip the individual alert. Do not block processing of other alerts.
 
 ## Deployment
@@ -315,26 +315,26 @@ subjects:
     namespace: openshift-lightspeed
 ```
 
-**2. Proposal management** — create and list Proposals across namespaces:
+**2. AgenticRun management** — create and list AgenticRuns across namespaces:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 rules:
   - apiGroups: ["agentic.openshift.io"]
-    resources: ["proposals"]
+    resources: ["agenticruns"]
     verbs: ["create", "list", "get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: lightspeed-agentic-alerts-adapter-proposals
+  name: lightspeed-agentic-alerts-adapter-agenticruns
 subjects:
   - kind: ServiceAccount
     name: lightspeed-agentic-alerts-adapter
@@ -345,7 +345,7 @@ subjects:
 
 | Dependency | Purpose |
 |-----------|---------|
-| `github.com/openshift/lightspeed-agentic-operator/api` | Typed Proposal CRD Go types |
+| `github.com/openshift/lightspeed-agentic-operator/api` | Typed AgenticRun CRD Go types |
 | `k8s.io/client-go` | In-cluster config, ServiceAccount auth |
 
 ## Configuration
@@ -364,9 +364,9 @@ The `alerts-adapter-config` ConfigMap is mounted as a volume at `/etc/alerts-ada
 | Field | Default | Description |
 |-------|---------|-------------|
 | `pollInterval` | `30s` | How often to poll AlertManager |
-| `initialDelay` | `5m` | Alert must fire this long before creating a Proposal |
-| `cooldownWindow` | `1h` | Minimum time after a terminal Proposal before re-proposing for the same alert |
-| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no proposals are created until receivers are explicitly configured |
+| `initialDelay` | `5m` | Alert must fire this long before creating an AgenticRun |
+| `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before re-proposing for the same alert |
+| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
 
 Tools/skills configuration is also supported — see [README.md](README.md#configuration) for the full ConfigMap example including shared and per-step skills.
 
@@ -374,18 +374,18 @@ Tools/skills configuration is also supported — see [README.md](README.md#confi
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `DefaultNamespace` | `openshift-lightspeed` | Namespace for Proposals from cluster-scoped alerts (no namespace label) |
+| `DefaultNamespace` | `openshift-lightspeed` | Namespace for AgenticRuns from cluster-scoped alerts (no namespace label) |
 | `DefaultAgent` | `default` | Agent name for analysis, execution, and verification steps |
 
 ## Future Work
 
-- **AlertManager-aware filtering**: Leverage AlertManager's grouping features to reduce noise. The adapter already filters out silenced and inhibited alerts via query parameters, but does not use grouping metadata. Future iterations could create a single Proposal per alert group instead of per individual alert.
-- **Custom fingerprinting and alert grouping**: Consider replacing AlertManager's fingerprint (hash of all labels) with a custom fingerprint computed from a chosen subset of labels. This could potentially enable custom alert grouping to handle alert storms — e.g., multiple related alerts might map to a single Proposal instead of creating one per alert. A custom fingerprint would also decouple the adapter from AlertManager's fingerprint format, making it easier to switch to other alert sources (e.g., Thanos Ruler) in the future. To be evaluated based on real-world usage patterns.
+- **AlertManager-aware filtering**: Leverage AlertManager's grouping features to reduce noise. The adapter already filters out silenced and inhibited alerts via query parameters, but does not use grouping metadata. Future iterations could create a single AgenticRun per alert group instead of per individual alert.
+- **Custom fingerprinting and alert grouping**: Consider replacing AlertManager's fingerprint (hash of all labels) with a custom fingerprint computed from a chosen subset of labels. This could potentially enable custom alert grouping to handle alert storms — e.g., multiple related alerts might map to a single AgenticRun instead of creating one per alert. A custom fingerprint would also decouple the adapter from AlertManager's fingerprint format, making it easier to switch to other alert sources (e.g., Thanos Ruler) in the future. To be evaluated based on real-world usage patterns.
 - **Per-alert-group configuration**: Allow a configuration resource (ConfigMap or CRD) to define customized settings per alert group — including initial delay, cooldown window, workflow pattern (full remediation / advisory / assisted), and prompt template. This would enable different handling strategies for different classes of alerts (e.g., shorter delay for critical infrastructure alerts, advisory-only for capacity warnings).
 - **Label-selector alert filtering**: The adapter currently filters by receiver allowlist and severity. A future iteration could add configurable label selectors for more fine-grained alert filtering.
-- **Prometheus metrics**: `alerts_adapter_polls_total`, `proposals_created_total`, `errors_total`, `poll_duration_seconds`.
+- **Prometheus metrics**: `alerts_adapter_polls_total`, `agenticruns_created_total`, `errors_total`, `poll_duration_seconds`.
 - **Adapter-specific analysis output schema**: Inject custom fields into `analysisOutput.schema` for alert correlation, affected services topology.
 - **Workflow selection**: Choose different workflow patterns (advisory, assisted, full remediation) based on alert labels.
-- **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic Proposal naming (based on alert identity and startsAt), concurrent replicas attempting to create the same Proposal would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
-- **Token budgets**: Protect against alert storms hitting model rate limits. At minimum add jitter to Proposal creation; consider an adapter-level or OLS-level token budget to prevent runaway costs.
+- **Multi-replica support**: Leader election or sharded alert processing for high availability. With deterministic AgenticRun naming (based on alert identity and startsAt), concurrent replicas attempting to create the same AgenticRun would result in one succeeding and the other receiving `409 Conflict (AlreadyExists)` — the adapter already treats 409 as success, so basic multi-replica operation works without coordination, though leader election would reduce redundant API calls.
+- **Token budgets**: Protect against alert storms hitting model rate limits. At minimum add jitter to AgenticRun creation; consider an adapter-level or OLS-level token budget to prevent runaway costs.
 - **Retry clarity for unparseable alerts**: When an alert cannot be parsed, the adapter skips it but will keep retrying on each subsequent poll until the alert disappears. Consider explicit retry-on-next-interval semantics with backoff or a skip list.

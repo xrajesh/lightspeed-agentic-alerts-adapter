@@ -19,7 +19,7 @@ const (
 	DefaultConfigPath = "/etc/alerts-adapter/config.yaml"
 )
 
-// AgentConfig holds the agent name overrides for Proposal workflow steps.
+// AgentConfig holds the agent name overrides for AgenticRun workflow steps.
 type AgentConfig struct {
 	Default      string
 	Analysis     string

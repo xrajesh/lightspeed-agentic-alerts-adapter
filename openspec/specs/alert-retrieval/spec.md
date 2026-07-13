@@ -1,5 +1,5 @@
 ## Purpose
-Retrieve active alerts from the in-cluster Alertmanager so the adapter can translate them into actionable Proposal resources.
+Retrieve active alerts from the in-cluster Alertmanager so the adapter can translate them into actionable AgenticRun resources.
 
 ## Requirements
 ### Requirement: Retrieve active alerts from Alertmanager

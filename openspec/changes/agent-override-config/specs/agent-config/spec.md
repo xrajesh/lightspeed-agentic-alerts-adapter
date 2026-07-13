@@ -23,7 +23,7 @@ The system SHALL parse an optional `agent` section from the `config.yaml` data i
 - **WHEN** the ConfigMap is not found in the cluster
 - **THEN** the loaded `Config` SHALL use defaults for all parameters and have an empty `AgentConfig`
 
-### Requirement: Resolve the effective agent for each Proposal step
+### Requirement: Resolve the effective agent for each AgenticRun step
 The system SHALL resolve the agent name for each workflow step using a three-level fallback: per-step override → global default → hardcoded `"default"`.
 
 #### Scenario: Per-step agent set for analysis
