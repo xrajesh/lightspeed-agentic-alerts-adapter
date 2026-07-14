@@ -9,10 +9,10 @@
 
 ## 2. Scope hashing
 
-- [ ] 2.1 Add `StableFingerprint(labels map[string]string, ignoredLabels []string) string` function in `internal/proposal/build.go` that strips ignored labels, sorts remaining key=value pairs, and returns `FNV-64a[:8]`
+- [ ] 2.1 Add `StableFingerprint(labels map[string]string, ignoredLabels []string) string` function in `internal/agenticrun/build.go` that strips ignored labels, sorts remaining key=value pairs, and returns `FNV-64a[:8]`
 - [ ] 2.2 Add tests: no ignored labels present, ignored labels stripped, two alerts differing only in ignored labels produce same hash, differing in non-ignored labels produce different hash, empty ignored list includes all labels
 
-## 3. Proposal building
+## 3. AgenticRun building
 
 - [ ] 3.1 Update `Build` to accept ignored labels and call `StableFingerprint` for the `alert-fingerprint` label value instead of using AlertManager's fingerprint directly
 - [ ] 3.2 Update `buildLabels` signature to accept the stable fingerprint
@@ -20,10 +20,10 @@
 
 ## 4. Adapter integration
 
-- [ ] 4.1 Thread `IgnoredLabels` from config through `Adapter` to the `proposal.Build` call
+- [ ] 4.1 Thread `IgnoredLabels` from config through `Adapter` to the `agenticrun.Build` call
 - [ ] 4.2 Update adapter tests to pass ignored labels config
 
 ## 5. Cleanup
 
 - [ ] 5.1 Remove `fingerprintPrefix` function from `internal/adapter/adapter.go` if no longer used (dedup now matches on the stable fingerprint written by `Build`)
-- [ ] 5.2 Verify `FingerprintLen` constant is still used for Proposal naming; if not, remove it
+- [ ] 5.2 Verify `FingerprintLen` constant is still used for AgenticRun naming; if not, remove it
