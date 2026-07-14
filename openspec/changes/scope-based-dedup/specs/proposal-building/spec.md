@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Build a Proposal CR from a single alert
-The system SHALL convert an Alertmanager `GettableAlert` into a `Proposal` custom resource with deterministic naming, Kubernetes-safe metadata, and a templated request for the analysis agent. The `agentic.openshift.io/alert-fingerprint` label SHALL use the stable fingerprint computed from the alert's labels minus volatile labels, instead of AlertManager's fingerprint.
+The system SHALL convert an Alertmanager `GettableAlert` into a `Proposal` custom resource with deterministic naming, Kubernetes-safe metadata, and a templated request for the analysis agent. The `agentic.openshift.io/alert-fingerprint` label SHALL use the stable fingerprint computed from the alert's labels minus ignored labels, instead of AlertManager's fingerprint.
 
 #### Scenario: Alert with namespace label
 - **WHEN** the alert has a `namespace` label
@@ -16,5 +16,5 @@ The system SHALL convert an Alertmanager `GettableAlert` into a `Proposal` custo
 - **THEN** both calls produce Proposals with identical names, enabling Kubernetes 409 deduplication
 
 #### Scenario: Two alerts for the same problem produce Proposals with the same fingerprint label
-- **WHEN** two alerts differ only in volatile labels (e.g., different pod names) but represent the same underlying problem
+- **WHEN** two alerts differ only in ignored labels (e.g., different pod names) but represent the same underlying problem
 - **THEN** both Proposals have the same `agentic.openshift.io/alert-fingerprint` label value but different Proposal names
