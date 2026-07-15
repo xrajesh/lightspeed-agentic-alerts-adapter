@@ -15,6 +15,6 @@ The system SHALL convert an Alertmanager `GettableAlert` into an `AgenticRun` cu
 - **WHEN** the same alert is passed to Build twice
 - **THEN** both calls produce AgenticRuns with identical names, enabling Kubernetes 409 deduplication for the exact same alert instance
 
-#### Scenario: Two alerts for the same problem produce AgenticRuns with the same fingerprint label
-- **WHEN** two alerts differ only in ignored labels (e.g., different pod names) but represent the same underlying problem
-- **THEN** both AgenticRuns have the same `agentic.openshift.io/alert-fingerprint` label value but different AgenticRun names. Deduplication across these alerts relies on `hasActiveRun` matching on the label, not on 409
+#### Scenario: Second alert for the same problem is deduplicated
+- **WHEN** two alerts differ only in ignored labels (e.g., different pod names) and an active AgenticRun already exists for the first alert
+- **THEN** the second alert produces the same `agentic.openshift.io/alert-fingerprint` label value, `hasActiveRun` matches the existing AgenticRun, and no new AgenticRun is created
