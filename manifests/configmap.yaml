@@ -16,11 +16,29 @@ data:
 
     # cooldownWindow: after an AgenticRun reaches a terminal state (Completed, Failed,
     # Denied, Escalated), how long to wait before creating a new AgenticRun for the
-    # same alert (matched by fingerprint label). Prevents flooding for flapping alerts.
+    # same alert (matched by stable fingerprint label). Prevents flooding for flapping alerts.
     # Default: 1h
     cooldownWindow: 1h
-    allowedReceivers:
-     - critical
+
+    # filtering: controls which alerts the adapter processes.
+    filtering:
+      # allowedReceivers: only process alerts routed to these receivers (case-insensitive).
+      # Omit to process alerts from all receivers.
+      allowedReceivers:
+        - critical
+
+    # deduplication: controls how the adapter identifies "the same problem" across
+    # alert re-fires (e.g. pod restarts producing a new pod name).
+    # deduplication:
+    #   # ignoredLabels: labels stripped before computing the stable fingerprint.
+    #   # When set, fully replaces the defaults (no merging).
+    #   # When absent, defaults to: [pod, instance, endpoint, uid]
+    #   # Set to [] to include all labels in the fingerprint.
+    #   ignoredLabels:
+    #     - pod
+    #     - instance
+    #     - endpoint
+    #     - uid
 
     # tools: shared skills for all workflow steps (maps to spec.tools on the AgenticRun).
     # When configured, every AgenticRun created by the adapter includes these skills.

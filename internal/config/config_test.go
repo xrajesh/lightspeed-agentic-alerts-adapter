@@ -168,6 +168,7 @@ func assertDefaults(t *testing.T, cfg Config) {
 		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
 	}
 	assertReceiversEqual(t, cfg.AllowedReceivers, defaults.AllowedReceivers)
+	assertStringSliceEqual(t, "IgnoredLabels", cfg.IgnoredLabels, DefaultIgnoredLabels)
 	assertEmptyTools(t, cfg.Tools)
 	if cfg.Agent != (AgentConfig{}) {
 		t.Errorf("Agent = %+v, want zero value", cfg.Agent)
@@ -413,6 +414,79 @@ func TestParseAllowedReceivers(t *testing.T) {
 	}
 }
 
+func TestParseIgnoredLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want []string
+	}{
+		{
+			name: "absent defaults to default list",
+			yaml: "pollInterval: 30s\n",
+			want: DefaultIgnoredLabels,
+		},
+		{
+			name: "explicit list replaces defaults",
+			yaml: "deduplication:\n  ignoredLabels:\n    - pod\n    - instance\n    - job\n",
+			want: []string{"pod", "instance", "job"},
+		},
+		{
+			name: "empty list means no stripping",
+			yaml: "deduplication:\n  ignoredLabels: []\n",
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfigFile(t, tt.yaml)
+
+			cfg := LoadFromFile(path, quietLogger())
+
+			assertStringSliceEqual(t, "IgnoredLabels", cfg.IgnoredLabels, tt.want)
+		})
+	}
+}
+
+func TestParseFilteringAllowedReceivers(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want []string
+	}{
+		{
+			name: "filtering.allowedReceivers",
+			yaml: "filtering:\n  allowedReceivers:\n    - Critical\n",
+			want: []string{"critical"},
+		},
+		{
+			name: "top-level allowedReceivers still works",
+			yaml: "allowedReceivers:\n  - PagerDuty\n",
+			want: []string{"pagerduty"},
+		},
+		{
+			name: "filtering section takes precedence over top-level",
+			yaml: "allowedReceivers:\n  - PagerDuty\nfiltering:\n  allowedReceivers:\n    - Critical\n",
+			want: []string{"critical"},
+		},
+		{
+			name: "filtering section with empty list",
+			yaml: "filtering:\n  allowedReceivers: []\n",
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfigFile(t, tt.yaml)
+
+			cfg := LoadFromFile(path, quietLogger())
+
+			assertReceiversEqual(t, cfg.AllowedReceivers, tt.want)
+		})
+	}
+}
+
 func TestAllowedReceiversDefaultsOnMissingFile(t *testing.T) {
 	cfg := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
 
@@ -513,6 +587,18 @@ agent:
 				t.Errorf("Agent = %+v, want %+v", cfg.Agent, tt.wantAgent)
 			}
 		})
+	}
+}
+
+func assertStringSliceEqual(t *testing.T, field string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d (got %v)", field, len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("%s[%d] = %q, want %q", field, i, got[i], w)
+		}
 	}
 }
 

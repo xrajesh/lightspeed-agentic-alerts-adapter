@@ -62,7 +62,8 @@ Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap i
 | `pollInterval` | `30s` | How often to poll AlertManager |
 | `initialDelay` | `5m` | Minimum time an alert must fire before an AgenticRun is created |
 | `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before retrying the same alert |
-| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
+| `filtering.allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
+| `deduplication.ignoredLabels` | `[pod, instance, endpoint, uid]` | Labels stripped before computing the stable fingerprint for dedup matching. When set, fully replaces the defaults. Set to `[]` to include all labels |
 
 #### Tools / Skills
 
@@ -90,9 +91,16 @@ data:
     pollInterval: "45s"
     initialDelay: "10m"
     cooldownWindow: "2h"
-    allowedReceivers:
-      - critical
-      - warning
+    filtering:
+      allowedReceivers:
+        - critical
+        - warning
+    deduplication:
+      ignoredLabels:
+        - pod
+        - instance
+        - endpoint
+        - uid
     tools:
       skills:
         - image: quay.io/example/shared-runbooks:latest

@@ -32,20 +32,20 @@ type AgenticRunClient interface {
 // applying stateless deduplication (initial delay, active-run check,
 // and cooldown window) on each cycle.
 type Adapter struct {
-	alerts AlertSource
-	runs   AgenticRunClient
-	cfg    config.Config
-	logger *slog.Logger
+	alerts   AlertSource
+	arClient AgenticRunClient
+	cfg      config.Config
+	logger   *slog.Logger
 }
 
 // New creates an Adapter with the given alert source, run client,
 // config, and logger.
-func New(alerts AlertSource, runs AgenticRunClient, cfg config.Config, logger *slog.Logger) *Adapter {
+func New(alerts AlertSource, arClient AgenticRunClient, cfg config.Config, logger *slog.Logger) *Adapter {
 	return &Adapter{
-		alerts: alerts,
-		runs:   runs,
-		cfg:    cfg,
-		logger: logger,
+		alerts:   alerts,
+		arClient: arClient,
+		cfg:      cfg,
+		logger:   logger,
 	}
 }
 
@@ -83,7 +83,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		return
 	}
 
-	runs, err := a.runs.ListAgenticRuns(ctx)
+	runs, err := a.arClient.ListAgenticRuns(ctx)
 	if err != nil {
 		a.logger.Error("failed to list runs", "error", err)
 		return
@@ -136,7 +136,9 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if hasActiveRun(alert, runs) {
+		stableFP := agenticrun.StableFingerprint(alert.Labels, a.cfg.IgnoredLabels)
+
+		if hasActiveRun(stableFP, runs) {
 			a.logger.Debug("alert skipped: active run exists",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -145,7 +147,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if inCooldown(alert, runs, now, a.cfg.CooldownWindow) {
+		if inCooldown(stableFP, runs, now, a.cfg.CooldownWindow) {
 			a.logger.Debug("alert skipped: cooldown window",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -155,7 +157,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		p, err := agenticrun.Build(alert, a.cfg.Tools, a.cfg.Agent)
+		p, err := agenticrun.Build(alert, a.cfg.Tools, a.cfg.Agent, a.cfg.IgnoredLabels)
 		if err != nil {
 			a.logger.Error("failed to build run",
 				"alertname", alertName,
@@ -165,7 +167,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		wasCreated, err := a.runs.CreateAgenticRun(ctx, p)
+		wasCreated, err := a.arClient.CreateAgenticRun(ctx, p)
 		if err != nil {
 			a.logger.Error("failed to create run",
 				"alertname", alertName,
@@ -177,6 +179,7 @@ func (a *Adapter) reconcile(ctx context.Context) {
 		}
 
 		if wasCreated {
+			runs = append(runs, *p)
 			a.logger.Info("run created",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
@@ -227,14 +230,9 @@ func skipInitialDelay(alert *models.GettableAlert, now time.Time, threshold time
 	return now.Sub(time.Time(*alert.StartsAt)) < threshold
 }
 
-func hasActiveRun(alert *models.GettableAlert, runs []agenticv1alpha1.AgenticRun) bool {
-	fp := fingerprintPrefix(alert)
-	if fp == "" {
-		return false
-	}
-
+func hasActiveRun(stableFingerprint string, runs []agenticv1alpha1.AgenticRun) bool {
 	for i := range runs {
-		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
+		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != stableFingerprint {
 			continue
 		}
 		phase := agenticv1alpha1.DerivePhase(runs[i].Status.Conditions)
@@ -245,14 +243,9 @@ func hasActiveRun(alert *models.GettableAlert, runs []agenticv1alpha1.AgenticRun
 	return false
 }
 
-func inCooldown(alert *models.GettableAlert, runs []agenticv1alpha1.AgenticRun, now time.Time, window time.Duration) bool {
-	fp := fingerprintPrefix(alert)
-	if fp == "" {
-		return false
-	}
-
+func inCooldown(stableFingerprint string, runs []agenticv1alpha1.AgenticRun, now time.Time, window time.Duration) bool {
 	for i := range runs {
-		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != fp {
+		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != stableFingerprint {
 			continue
 		}
 		tt := terminalTime(&runs[i])
@@ -315,13 +308,3 @@ func isTerminal(phase agenticv1alpha1.AgenticRunPhase) bool {
 	return false
 }
 
-func fingerprintPrefix(alert *models.GettableAlert) string {
-	if alert.Fingerprint == nil {
-		return ""
-	}
-	fp := *alert.Fingerprint
-	if len(fp) > agenticrun.FingerprintLen {
-		fp = fp[:agenticrun.FingerprintLen]
-	}
-	return fp
-}
