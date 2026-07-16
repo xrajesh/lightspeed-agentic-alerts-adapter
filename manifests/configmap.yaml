@@ -23,7 +23,7 @@ data:
     # filtering: controls which alerts the adapter processes.
     filtering:
       # allowedReceivers: only process alerts routed to these receivers (case-insensitive).
-      # Omit to process alerts from all receivers.
+      # No AgenticRuns are created until receivers are explicitly configured.
       allowedReceivers:
         - critical
 
