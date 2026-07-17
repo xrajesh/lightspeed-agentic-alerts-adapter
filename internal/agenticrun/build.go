@@ -7,7 +7,10 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -33,9 +36,7 @@ const (
 	sourceValue = "alertmanager"
 
 	maxLabelValueLen = 63
-	// FingerprintLen is the number of characters used from the alert fingerprint
-	// for labels and dedup matching. Exported for use by the adapter package.
-	FingerprintLen = 8
+	fingerprintLen = 8
 	maxSummaryLen  = 256
 )
 
@@ -64,14 +65,14 @@ type requestData struct {
 // safe against duplicate creation via Kubernetes 409 AlreadyExists.
 // Different occurrences of the same alert (different startsAt) produce
 // distinct AgenticRun names, allowing re-creation after cooldown.
-func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig) (*agenticv1alpha1.AgenticRun, error) {
+func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.AgentConfig, ignoredLabels []string) (*agenticv1alpha1.AgenticRun, error) {
 	if a.Fingerprint == nil {
 		return nil, fmt.Errorf("agenticrun: alert fingerprint is nil")
 	}
 
 	alertName := a.Labels["alertname"]
 	namespace := a.Labels["namespace"]
-	fingerprint := *a.Fingerprint
+	stableFP := StableFingerprint(a.Labels, ignoredLabels)
 	severity := a.Labels["severity"]
 
 	if a.StartsAt == nil {
@@ -106,7 +107,7 @@ func Build(a *models.GettableAlert, tools config.ToolsConfig, agent config.Agent
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        buildName(alertName, namespace, startsAt),
 			Namespace:   runNamespace,
-			Labels:      buildLabels(alertName, severity, fingerprint),
+			Labels:      buildLabels(alertName, severity, stableFP),
 			Annotations: buildAnnotations(a),
 		},
 		Spec: agenticv1alpha1.AgenticRunSpec{
@@ -167,14 +168,13 @@ func startsAtHash(t time.Time) string {
 }
 
 // buildLabels sets Kubernetes labels for alert traceability and filtering.
-func buildLabels(alertName, severity, fingerprint string) map[string]string {
-	labels := map[string]string{
+func buildLabels(alertName, severity, stableFingerprint string) map[string]string {
+	return map[string]string{
 		labelSource:      sourceValue,
-		labelFingerprint: sanitizeLabelValue(fingerprint[:min(len(fingerprint), FingerprintLen)]),
+		labelFingerprint: stableFingerprint,
 		labelAlertName:   sanitizeLabelValue(strings.ToLower(alertName)),
 		labelSeverity:    sanitizeLabelValue(severity),
 	}
-	return labels
 }
 
 // buildAnnotations sets Kubernetes annotations with non-indexed alert metadata.
@@ -250,4 +250,29 @@ func truncateDNS(s string, maxLen int) string {
 	s = s[:maxLen]
 	s = strings.TrimRight(s, "-_.")
 	return s
+}
+
+// StableFingerprint computes a stable hash from alert labels after removing
+// ignored labels. The remaining key=value pairs are sorted lexicographically,
+// joined with a null byte separator, and hashed with FNV-64a truncated to 8
+// hex characters.
+func StableFingerprint(labels map[string]string, ignoredLabels []string) string {
+	pairs := make([]string, 0, len(labels))
+	for k, v := range labels {
+		if slices.Contains(ignoredLabels, k) {
+			continue
+		}
+		pairs = append(pairs, k+"="+v)
+	}
+	sort.Strings(pairs)
+
+	h := fnv.New64a()
+	for i, p := range pairs {
+		if i > 0 {
+			h.Write([]byte{0})
+		}
+		h.Write([]byte(p))
+	}
+
+	return fmt.Sprintf("%016x", h.Sum64())[:fingerprintLen]
 }

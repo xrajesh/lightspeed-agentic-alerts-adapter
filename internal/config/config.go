@@ -19,6 +19,8 @@ const (
 	DefaultConfigPath = "/etc/alerts-adapter/config.yaml"
 )
 
+var DefaultIgnoredLabels = []string{"pod", "instance", "endpoint", "uid"}
+
 // AgentConfig holds the agent name overrides for AgenticRun workflow steps.
 type AgentConfig struct {
 	Default      string
@@ -41,6 +43,7 @@ type Config struct {
 	InitialDelay     time.Duration
 	CooldownWindow   time.Duration
 	AllowedReceivers []string
+	IgnoredLabels    []string
 	Tools            ToolsConfig
 	Agent            AgentConfig
 }
@@ -52,6 +55,7 @@ func Default() Config {
 		InitialDelay:     DefaultInitialDelay,
 		CooldownWindow:   DefaultCooldownWindow,
 		AllowedReceivers: nil,
+		IgnoredLabels:    append([]string{}, DefaultIgnoredLabels...),
 	}
 }
 
@@ -60,11 +64,21 @@ type configFile struct {
 	InitialDelay     Duration         `yaml:"initialDelay"`
 	CooldownWindow   Duration         `yaml:"cooldownWindow"`
 	AllowedReceivers *[]string        `yaml:"allowedReceivers"`
+	Filtering        filteringEntry   `yaml:"filtering"`
+	Deduplication    deduplicationEntry `yaml:"deduplication"`
 	Tools            toolsEntry       `yaml:"tools"`
 	Analysis         stepEntry        `yaml:"analysis"`
 	Execution        stepEntry        `yaml:"execution"`
 	Verification     stepEntry        `yaml:"verification"`
 	Agent            agentEntry       `yaml:"agent"`
+}
+
+type filteringEntry struct {
+	AllowedReceivers *[]string `yaml:"allowedReceivers"`
+}
+
+type deduplicationEntry struct {
+	IgnoredLabels *[]string `yaml:"ignoredLabels"`
 }
 
 type agentEntry struct {
@@ -146,12 +160,20 @@ func LoadFromFile(path string, logger *slog.Logger) Config {
 		}
 	}
 
-	if cf.AllowedReceivers != nil {
-		normalized := make([]string, 0, len(*cf.AllowedReceivers))
-		for _, r := range *cf.AllowedReceivers {
+	rawReceivers := cf.AllowedReceivers
+	if cf.Filtering.AllowedReceivers != nil {
+		rawReceivers = cf.Filtering.AllowedReceivers
+	}
+	if rawReceivers != nil {
+		normalized := make([]string, 0, len(*rawReceivers))
+		for _, r := range *rawReceivers {
 			normalized = append(normalized, strings.ToLower(r))
 		}
 		cfg.AllowedReceivers = normalized
+	}
+
+	if cf.Deduplication.IgnoredLabels != nil {
+		cfg.IgnoredLabels = *cf.Deduplication.IgnoredLabels
 	}
 
 	cfg.Tools = ToolsConfig{

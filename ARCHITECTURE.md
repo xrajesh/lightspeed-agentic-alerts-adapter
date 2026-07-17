@@ -95,7 +95,7 @@ every <pollInterval> (default 30s):
         a. Receivers not in allowedReceivers?               → skip (not routed to allowed receiver)
         b. Severity is "none" or "info"?                    → skip (low severity)
         c. now - alert.startsAt < initialDelay?             → skip (too transient)
-        d. Active AgenticRun with same fingerprint?          → skip (already handling)
+        d. Active AgenticRun with same stable fingerprint?    → skip (already handling)
         e. Terminal AgenticRun within cooldownWindow?       → skip (too soon to retry)
         f. Else → CREATE AgenticRun
 ```
@@ -366,7 +366,8 @@ The `alerts-adapter-config` ConfigMap is mounted as a volume at `/etc/alerts-ada
 | `pollInterval` | `30s` | How often to poll AlertManager |
 | `initialDelay` | `5m` | Alert must fire this long before creating an AgenticRun |
 | `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before re-proposing for the same alert |
-| `allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
+| `filtering.allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
+| `deduplication.ignoredLabels` | `[pod, instance, endpoint, uid]` | Labels stripped before computing the stable fingerprint for dedup matching. When set, fully replaces the defaults. Set to `[]` to include all labels |
 
 Tools/skills configuration is also supported — see [README.md](README.md#configuration) for the full ConfigMap example including shared and per-step skills.
 

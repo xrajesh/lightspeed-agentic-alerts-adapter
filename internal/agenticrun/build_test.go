@@ -38,9 +38,12 @@ func makeAlert(alertName, namespace, fingerprint, severity string) *models.Getta
 }
 
 func TestBuild(t *testing.T) {
+	noIgnored := []string{}
+
 	tests := []struct {
 		name              string
 		alert             *models.GettableAlert
+		ignoredLabels     []string
 		expectedName      string
 		expectedNamespace string
 		expectedTargetNS  []string
@@ -49,14 +52,19 @@ func TestBuild(t *testing.T) {
 		{
 			name:              "namespaced alert",
 			alert:             makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical"),
+			ignoredLabels:     noIgnored,
 			expectedName:      "kubepodcrashlooping-production-895c8977",
 			expectedNamespace: runNamespace,
 			expectedTargetNS:  []string{"production"},
 			expectedLabels: map[string]string{
-				labelSource:      sourceValue,
-				labelFingerprint: "abcdef12",
-				labelAlertName:   "kubepodcrashlooping",
-				labelSeverity:    "critical",
+				labelSource: sourceValue,
+				labelFingerprint: StableFingerprint(map[string]string{
+					"alertname": "KubePodCrashLooping",
+					"namespace": "production",
+					"severity":  "critical",
+				}, noIgnored),
+				labelAlertName: "kubepodcrashlooping",
+				labelSeverity:  "critical",
 			},
 		},
 		{
@@ -66,34 +74,43 @@ func TestBuild(t *testing.T) {
 				delete(a.Labels, "namespace")
 				return a
 			}(),
+			ignoredLabels:     noIgnored,
 			expectedName:      "clusterversionavailable-895c8977",
 			expectedNamespace: runNamespace,
 			expectedTargetNS:  nil,
 			expectedLabels: map[string]string{
-				labelSource:      sourceValue,
-				labelFingerprint: "ff00ff00",
-				labelAlertName:   "clusterversionavailable",
-				labelSeverity:    "info",
+				labelSource: sourceValue,
+				labelFingerprint: StableFingerprint(map[string]string{
+					"alertname": "ClusterVersionAvailable",
+					"severity":  "info",
+				}, noIgnored),
+				labelAlertName: "clusterversionavailable",
+				labelSeverity:  "info",
 			},
 		},
 		{
-			name:              "short fingerprint (less than 8 chars)",
+			name:              "ignored labels stripped from fingerprint",
 			alert:             makeAlert("TestAlert", "ns", "abc", "warning"),
+			ignoredLabels:     []string{"pod", "instance"},
 			expectedName:      "testalert-ns-895c8977",
 			expectedNamespace: runNamespace,
 			expectedTargetNS:  []string{"ns"},
 			expectedLabels: map[string]string{
-				labelSource:      sourceValue,
-				labelFingerprint: "abc",
-				labelAlertName:   "testalert",
-				labelSeverity:    "warning",
+				labelSource: sourceValue,
+				labelFingerprint: StableFingerprint(map[string]string{
+					"alertname": "TestAlert",
+					"namespace": "ns",
+					"severity":  "warning",
+				}, []string{"pod", "instance"}),
+				labelAlertName: "testalert",
+				labelSeverity:  "warning",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := Build(tt.alert, config.ToolsConfig{}, config.AgentConfig{})
+			p, err := Build(tt.alert, config.ToolsConfig{}, config.AgentConfig{}, tt.ignoredLabels)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -132,7 +149,7 @@ func TestBuildNilFingerprint(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 	a.Fingerprint = nil
 
-	_, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	_, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil fingerprint, got nil")
 	}
@@ -147,7 +164,7 @@ func TestBuildNilStartsAt(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 	a.StartsAt = nil
 
-	_, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	_, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil startsAt, got nil")
 	}
@@ -160,7 +177,7 @@ func TestBuildNilStartsAt(t *testing.T) {
 
 func TestBuildWorkflowSteps(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -179,11 +196,11 @@ func TestBuildWorkflowSteps(t *testing.T) {
 func TestBuildDeterministicNaming(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef1234567890", "critical")
 
-	p1, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p1, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("first build: %v", err)
 	}
-	p2, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p2, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("second build: %v", err)
 	}
@@ -196,7 +213,7 @@ func TestBuildDeterministicNaming(t *testing.T) {
 func TestBuildAnnotations(t *testing.T) {
 	t.Run("starts-at is RFC3339 UTC", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -209,7 +226,7 @@ func TestBuildAnnotations(t *testing.T) {
 
 	t.Run("summary is included", func(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -224,7 +241,7 @@ func TestBuildAnnotations(t *testing.T) {
 		startsAt := strfmt.DateTime(time.Time{})
 		a.StartsAt = &startsAt
 
-		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -240,7 +257,7 @@ func TestBuildAnnotations(t *testing.T) {
 		a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 		a.Annotations["summary"] = strings.Repeat("x", 300)
 
-		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -254,7 +271,7 @@ func TestBuildRequest(t *testing.T) {
 	a := makeAlert("KubePodCrashLooping", "production", "abcdef12", "critical")
 	a.Annotations["runbook_url"] = "https://runbooks.example.com/KubePodCrashLooping"
 
-	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,7 +291,7 @@ func TestBuildRequest(t *testing.T) {
 
 func TestBuildRequestWithoutRunbook(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -409,7 +426,7 @@ func TestSanitizeLabelValue(t *testing.T) {
 
 func TestBuildTypeMeta(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
-	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+	p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -426,7 +443,7 @@ func TestBuildWithTools(t *testing.T) {
 	a := makeAlert("TestAlert", "ns", "abcdef12", "warning")
 
 	t.Run("empty tools config omits all tools", func(t *testing.T) {
-		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{})
+		p, err := Build(a, config.ToolsConfig{}, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -450,7 +467,7 @@ func TestBuildWithTools(t *testing.T) {
 				{Image: "registry.example.com/skills:latest", Paths: []string{"/skills/prometheus"}},
 			},
 		}
-		p, err := Build(a, tc, config.AgentConfig{})
+		p, err := Build(a, tc, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -483,7 +500,7 @@ func TestBuildWithTools(t *testing.T) {
 				{Image: "registry.example.com/verify:latest", Paths: []string{"/skills/validation"}},
 			},
 		}
-		p, err := Build(a, tc, config.AgentConfig{})
+		p, err := Build(a, tc, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -519,7 +536,7 @@ func TestBuildWithTools(t *testing.T) {
 				{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
 			},
 		}
-		p, err := Build(a, tc, config.AgentConfig{})
+		p, err := Build(a, tc, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -549,12 +566,117 @@ func TestBuildWithTools(t *testing.T) {
 				{Image: "registry.example.com/analysis:latest", Paths: []string{"/skills/diagnostic"}},
 			},
 		}
-		p, err := Build(a, tc, config.AgentConfig{})
+		p, err := Build(a, tc, config.AgentConfig{}, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if p.Spec.Analysis.Agent != defaultAgent {
 			t.Errorf("analysis.agent = %q, want %q", p.Spec.Analysis.Agent, defaultAgent)
+		}
+	})
+}
+
+func TestStableFingerprint(t *testing.T) {
+	t.Run("no ignored labels present", func(t *testing.T) {
+		labels := map[string]string{
+			"alertname": "HighCPU",
+			"namespace": "myns",
+			"container": "app",
+		}
+		fp := StableFingerprint(labels, []string{"pod", "instance", "endpoint", "uid"})
+		if len(fp) != 8 {
+			t.Errorf("fingerprint length = %d, want %d", len(fp), 8)
+		}
+		if fp == "" {
+			t.Error("fingerprint is empty")
+		}
+	})
+
+	t.Run("ignored labels stripped", func(t *testing.T) {
+		labels := map[string]string{
+			"alertname": "KubePodCrashLooping",
+			"namespace": "myns",
+			"pod":       "app-abc123",
+			"container": "app",
+		}
+		fp := StableFingerprint(labels, []string{"pod", "instance", "endpoint", "uid"})
+
+		labelsWithout := map[string]string{
+			"alertname": "KubePodCrashLooping",
+			"namespace": "myns",
+			"container": "app",
+		}
+		fpWithout := StableFingerprint(labelsWithout, []string{"pod", "instance", "endpoint", "uid"})
+
+		if fp != fpWithout {
+			t.Errorf("fingerprint with pod (%s) != fingerprint without pod (%s)", fp, fpWithout)
+		}
+	})
+
+	t.Run("two alerts differing only in ignored labels produce same hash", func(t *testing.T) {
+		labelsA := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+			"pod":       "pod-aaa",
+		}
+		labelsB := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+			"pod":       "pod-bbb",
+		}
+		fpA := StableFingerprint(labelsA, []string{"pod"})
+		fpB := StableFingerprint(labelsB, []string{"pod"})
+		if fpA != fpB {
+			t.Errorf("fingerprints differ: %s vs %s", fpA, fpB)
+		}
+	})
+
+	t.Run("differing in non-ignored labels produce different hash", func(t *testing.T) {
+		labelsA := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+			"container": "foo",
+		}
+		labelsB := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+			"container": "bar",
+		}
+		fpA := StableFingerprint(labelsA, []string{"pod"})
+		fpB := StableFingerprint(labelsB, []string{"pod"})
+		if fpA == fpB {
+			t.Errorf("fingerprints should differ but both are %s", fpA)
+		}
+	})
+
+	t.Run("empty ignored list includes all labels", func(t *testing.T) {
+		labels := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+			"pod":       "pod-aaa",
+		}
+		fpAll := StableFingerprint(labels, []string{})
+
+		labelsNoPod := map[string]string{
+			"alertname": "X",
+			"namespace": "ns",
+		}
+		fpNoPod := StableFingerprint(labelsNoPod, []string{})
+
+		if fpAll == fpNoPod {
+			t.Errorf("fingerprints should differ when all labels included, but both are %s", fpAll)
+		}
+	})
+
+	t.Run("deterministic across calls", func(t *testing.T) {
+		labels := map[string]string{
+			"alertname": "HighCPU",
+			"namespace": "myns",
+		}
+		fp1 := StableFingerprint(labels, []string{"pod"})
+		fp2 := StableFingerprint(labels, []string{"pod"})
+		if fp1 != fp2 {
+			t.Errorf("fingerprints differ across calls: %s vs %s", fp1, fp2)
 		}
 	})
 }
@@ -616,7 +738,7 @@ func TestBuildWithAgentOverrides(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := Build(a, config.ToolsConfig{}, tt.agent)
+			p, err := Build(a, config.ToolsConfig{}, tt.agent, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

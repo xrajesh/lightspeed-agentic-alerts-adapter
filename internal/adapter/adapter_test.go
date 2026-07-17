@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/agenticrun"
 	"github.com/openshift/lightspeed-agentic-alerts-adapter/internal/config"
 )
 
@@ -62,7 +63,12 @@ func defaultTestConfig() config.Config {
 		InitialDelay:     config.DefaultInitialDelay,
 		CooldownWindow:   config.DefaultCooldownWindow,
 		AllowedReceivers: []string{"critical"},
+		IgnoredLabels:    config.DefaultIgnoredLabels,
 	}
+}
+
+func stableFP(labels models.LabelSet) string {
+	return agenticrun.StableFingerprint(labels, config.DefaultIgnoredLabels)
 }
 
 func makeAlert(name, fingerprint string, startsAt time.Time) *models.GettableAlert {
@@ -109,6 +115,8 @@ func TestReconcile(t *testing.T) {
 	withinCooldown := now.Add(-30 * time.Minute)
 	pastCooldown := now.Add(-2 * time.Hour)
 
+	highCPUFP := stableFP(models.LabelSet{"alertname": "HighCPU", "severity": "warning"})
+
 	tests := []struct {
 		name            string
 		alerts          models.GettableAlerts
@@ -135,7 +143,7 @@ func TestReconcile(t *testing.T) {
 			name:   "active run skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionUnknown},
 				}),
 			},
@@ -145,7 +153,7 @@ func TestReconcile(t *testing.T) {
 			name:   "terminal run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionTrue},
 					{Type: "Executed", Status: metav1.ConditionTrue},
 					{
@@ -161,7 +169,7 @@ func TestReconcile(t *testing.T) {
 			name:   "terminal run past cooldown creates new run",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{Type: "Analyzed", Status: metav1.ConditionTrue},
 					{Type: "Executed", Status: metav1.ConditionTrue},
 					{
@@ -178,7 +186,7 @@ func TestReconcile(t *testing.T) {
 			name:   "failed run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Analyzed",
 						Status:             metav1.ConditionFalse,
@@ -192,7 +200,7 @@ func TestReconcile(t *testing.T) {
 			name:   "denied run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Denied",
 						Status:             metav1.ConditionTrue,
@@ -206,7 +214,7 @@ func TestReconcile(t *testing.T) {
 			name:   "escalated run within cooldown skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
-				makeRun("abcdef12", []metav1.Condition{
+				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Escalated",
 						Status:             metav1.ConditionTrue,
@@ -280,7 +288,7 @@ func TestReconcile(t *testing.T) {
 
 			a := &Adapter{
 				alerts: as,
-				runs:   rc,
+				arClient: rc,
 				cfg:    defaultTestConfig(),
 				logger: quietLogger(),
 			}
@@ -447,7 +455,7 @@ func TestReconcileSkipsSeverity(t *testing.T) {
 
 			a := &Adapter{
 				alerts: as,
-				runs:   rc,
+				arClient: rc,
 				cfg:    defaultTestConfig(),
 				logger: quietLogger(),
 			}
@@ -477,7 +485,7 @@ func TestReconcileWithTools(t *testing.T) {
 
 		a := &Adapter{
 			alerts: as,
-			runs:   rc,
+			arClient: rc,
 			cfg:    cfg,
 			logger: quietLogger(),
 		}
@@ -511,7 +519,7 @@ func TestReconcileWithTools(t *testing.T) {
 
 		a := &Adapter{
 			alerts: as,
-			runs:   rc,
+			arClient: rc,
 			cfg:    cfg,
 			logger: quietLogger(),
 		}
@@ -543,6 +551,38 @@ func TestReconcileWithTools(t *testing.T) {
 	})
 }
 
+func TestReconcileDedupsWithinSameCycle(t *testing.T) {
+	now := time.Now()
+	oldEnough1 := now.Add(-10 * time.Minute)
+	oldEnough2 := now.Add(-20 * time.Minute)
+	oldEnough3 := now.Add(-30 * time.Minute)
+
+	as := &fakeAlertSource{
+		alerts: models.GettableAlerts{
+			makeAlert("KubeJobFailed", "aaa111", oldEnough1),
+			makeAlert("KubeJobFailed", "bbb222", oldEnough2),
+			makeAlert("KubeJobFailed", "ccc333", oldEnough3),
+		},
+	}
+	rc := &fakeRunClient{}
+
+	a := &Adapter{
+		alerts:   as,
+		arClient: rc,
+		cfg:      defaultTestConfig(),
+		logger:   quietLogger(),
+	}
+
+	a.reconcile(context.Background())
+
+	if rc.createCalls != 1 {
+		t.Errorf("CreateAgenticRun called %d times, want 1 (same fingerprint should dedup within cycle)", rc.createCalls)
+	}
+	if len(rc.created) != 1 {
+		t.Errorf("created %d runs, want 1", len(rc.created))
+	}
+}
+
 func TestRunExitsOnContextCancel(t *testing.T) {
 	as := &fakeAlertSource{}
 	rc := &fakeRunClient{}
@@ -552,7 +592,7 @@ func TestRunExitsOnContextCancel(t *testing.T) {
 
 	a := &Adapter{
 		alerts: as,
-		runs:   rc,
+		arClient: rc,
 		cfg:    cfg,
 		logger: quietLogger(),
 	}

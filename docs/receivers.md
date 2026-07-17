@@ -27,7 +27,7 @@ The alerts adapter uses receivers as a **scoping mechanism** to control which al
 
 When AlertManager returns its list of firing alerts (`GET /api/v2/alerts`), each alert includes the receivers it was dispatched to. The adapter applies a receiver filter as the **first check** in its reconcile loop, before severity filtering, initial delay, or deduplication checks:
 
-1. Read the `allowedReceivers` list from configuration.
+1. Read the `filtering.allowedReceivers` list from configuration (also accepts top-level `allowedReceivers` for backward compatibility).
 2. For each alert, iterate over its receivers.
 3. If any receiver name matches an entry in the allowlist (case-insensitive), the alert passes.
 4. If no receiver matches, the alert is skipped.
@@ -36,7 +36,7 @@ This means the routing decisions already made by AlertManager — based on label
 
 ### Default behavior
 
-When no `allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to an empty list. This means no alerts produce AgenticRuns until receivers are explicitly configured in the ConfigMap.
+When no `filtering.allowedReceivers` field is configured (or the ConfigMap is absent), the adapter defaults to an empty list. This means no alerts produce AgenticRuns until receivers are explicitly configured in the ConfigMap.
 
 ### Configuration
 
@@ -50,9 +50,12 @@ metadata:
   namespace: openshift-lightspeed
 data:
   config.yaml: |
-    allowedReceivers:
-      - critical
+    filtering:
+      allowedReceivers:
+        - critical
 ```
+
+Top-level `allowedReceivers` is also accepted for backward compatibility, but `filtering.allowedReceivers` takes precedence when both are present.
 
 Key behaviors:
 

@@ -27,7 +27,7 @@ Three internal packages, each behind an interface, wired together in `cmd/alerts
 
 - **`internal/alertmanager`** — AlertManager API client. Reads bearer token on every call (handles rotation). TLS via in-cluster CA. Implements `adapter.AlertSource`.
 - **`internal/agenticrun`** — Two concerns: `build.go` translates an alert into an `AgenticRun` CR (deterministic name from alertname, namespace, and startsAt hash; embedded Go template `request.tmpl` for the request field); `client.go` wraps controller-runtime to create/list AgenticRuns. Implements `adapter.AgenticRunClient`.
-- **`internal/adapter`** — Poll loop (`Run` → `reconcile` on ticker). Stateless deduplication: skips alerts below `initialDelay` (5m), with an active (non-terminal) AgenticRun, or within `cooldownWindow` (1h) of a terminal AgenticRun. Matching is by `alert-fingerprint` label (first 8 chars).
+- **`internal/adapter`** — Poll loop (`Run` → `reconcile` on ticker). Stateless deduplication: skips alerts below `initialDelay` (5m), with an active (non-terminal) AgenticRun, or within `cooldownWindow` (1h) of a terminal AgenticRun. Matching is by `alert-fingerprint` label (stable FNV-64a hash of labels minus configurable ignored labels).
 
 The AgenticRun CRD types come from `github.com/openshift/lightspeed-agentic-operator/api`.
 
@@ -36,7 +36,7 @@ The AgenticRun CRD types come from `github.com/openshift/lightspeed-agentic-oper
 - Polls (not webhooks) for resilience — restart immediately sees all firing alerts.
 - AgenticRuns always created in `openshift-lightspeed` namespace.
 - 409 AlreadyExists on create is expected and handled as a no-op (returns `false, nil`).
-- Fingerprint prefix (8 chars) is used for dedup matching via the `alert-fingerprint` label (`agenticrun.FingerprintLen`). AgenticRun names use a hash of the alert's `startsAt` timestamp instead, so different occurrences of the same alert produce distinct AgenticRuns.
+- Stable fingerprint (FNV-64a[:8] of sorted labels minus configurable ignored labels) is used for dedup matching via the `alert-fingerprint` label. Default ignored labels: `pod`, `instance`, `endpoint`, `uid`. Configurable via `deduplication.ignoredLabels` in the ConfigMap. AgenticRun names use a hash of the alert's `startsAt` timestamp for uniqueness.
 - Terminal phases: Completed, Failed, Denied, Escalated.
 
 ## Conventions
