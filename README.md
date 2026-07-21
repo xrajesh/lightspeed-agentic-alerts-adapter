@@ -55,13 +55,13 @@ The adapter runs as a single-replica Deployment in the `openshift-lightspeed` na
 
 ### ConfigMap
 
-Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap in the `openshift-lightspeed` namespace (key: `config.yaml`). Changes are picked up on the next poll cycle — no restart required. If the ConfigMap is missing or malformed, defaults are used.
+Runtime-tunable parameters are read from the `alerts-adapter-config` ConfigMap in the `openshift-lightspeed` namespace (key: `config.yaml`), mounted as a volume and read once at startup. The operator restarts the adapter pod when the ConfigMap changes. If the ConfigMap is missing, defaults are used. Invalid YAML or unparseable duration values cause the adapter to fail to start.
 
 | Field | Default | Description |
 |---|---|---|
 | `pollInterval` | `30s` | How often to poll AlertManager |
-| `initialDelay` | `5m` | Minimum time an alert must fire before an AgenticRun is created |
-| `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before retrying the same alert |
+| `preRunDelay` | `0s` | Minimum time an alert must fire before an AgenticRun is created |
+| `postRunDelay` | `1h` | Minimum time after a terminal AgenticRun before retrying the same alert |
 | `filtering.allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
 | `deduplication.ignoredLabels` | `[pod, instance, endpoint, uid]` | Labels stripped before computing the stable fingerprint for dedup matching. When set, fully replaces the defaults. Set to `[]` to include all labels |
 
@@ -89,8 +89,8 @@ metadata:
 data:
   config.yaml: |
     pollInterval: "45s"
-    initialDelay: "10m"
-    cooldownWindow: "2h"
+    preRunDelay: "10m"
+    postRunDelay: "2h"
     filtering:
       allowedReceivers:
         - critical

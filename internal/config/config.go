@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	DefaultPollInterval   = 30 * time.Second
-	DefaultInitialDelay   = 5 * time.Minute
-	DefaultCooldownWindow = 1 * time.Hour
+	DefaultPollInterval  = 30 * time.Second
+	DefaultPreRunDelay   = 0
+	DefaultPostRunDelay  = 1 * time.Hour
 
 	DefaultConfigPath = "/etc/alerts-adapter/config.yaml"
 )
@@ -39,9 +39,9 @@ type ToolsConfig struct {
 
 // Config holds the adapter's runtime-tunable parameters.
 type Config struct {
-	PollInterval     time.Duration
-	InitialDelay     time.Duration
-	CooldownWindow   time.Duration
+	PollInterval    time.Duration
+	PreRunDelay     time.Duration
+	PostRunDelay    time.Duration
 	AllowedReceivers []string
 	IgnoredLabels    []string
 	Tools            ToolsConfig
@@ -51,9 +51,9 @@ type Config struct {
 // Default returns a Config with the default values.
 func Default() Config {
 	return Config{
-		PollInterval:     DefaultPollInterval,
-		InitialDelay:     DefaultInitialDelay,
-		CooldownWindow:   DefaultCooldownWindow,
+		PollInterval:    DefaultPollInterval,
+		PreRunDelay:     DefaultPreRunDelay,
+		PostRunDelay:    DefaultPostRunDelay,
 		AllowedReceivers: nil,
 		IgnoredLabels:    append([]string{}, DefaultIgnoredLabels...),
 	}
@@ -61,8 +61,8 @@ func Default() Config {
 
 type configFile struct {
 	PollInterval     Duration         `yaml:"pollInterval"`
-	InitialDelay     Duration         `yaml:"initialDelay"`
-	CooldownWindow   Duration         `yaml:"cooldownWindow"`
+	PreRunDelay      Duration         `yaml:"preRunDelay"`
+	PostRunDelay     Duration         `yaml:"postRunDelay"`
 	AllowedReceivers *[]string        `yaml:"allowedReceivers"`
 	Filtering        filteringEntry   `yaml:"filtering"`
 	Deduplication    deduplicationEntry `yaml:"deduplication"`
@@ -122,20 +122,23 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // LoadFromFile reads configuration from a YAML file at the given path.
-// It never returns an error — on any failure it falls back to defaults and logs.
-func LoadFromFile(path string, logger *slog.Logger) Config {
+// It returns an error on invalid YAML or unparseable duration values.
+// Missing file is not an error — defaults are used.
+func LoadFromFile(path string, logger *slog.Logger) (Config, error) {
 	cfg := Default()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		logger.Error("failed to read config file, using defaults", "path", path, "error", err)
-		return cfg
+		if os.IsNotExist(err) {
+			logger.Info("config file not found, using defaults", "path", path)
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("reading config file: %w", err)
 	}
 
 	var cf configFile
 	if err := yaml.Unmarshal(data, &cf); err != nil {
-		logger.Error("failed to parse config file, using defaults", "path", path, "error", err)
-		return cfg
+		return cfg, fmt.Errorf("parsing config file: %w", err)
 	}
 
 	if cf.PollInterval.isSet {
@@ -145,18 +148,18 @@ func LoadFromFile(path string, logger *slog.Logger) Config {
 			logger.Error("pollInterval must be positive, using default", "value", cf.PollInterval.Duration)
 		}
 	}
-	if cf.InitialDelay.isSet {
-		if cf.InitialDelay.Duration > 0 {
-			cfg.InitialDelay = cf.InitialDelay.Duration
+	if cf.PreRunDelay.isSet {
+		if cf.PreRunDelay.Duration > 0 {
+			cfg.PreRunDelay = cf.PreRunDelay.Duration
 		} else {
-			logger.Error("initialDelay must be positive, using default", "value", cf.InitialDelay.Duration)
+			cfg.PreRunDelay = 0
 		}
 	}
-	if cf.CooldownWindow.isSet {
-		if cf.CooldownWindow.Duration > 0 {
-			cfg.CooldownWindow = cf.CooldownWindow.Duration
+	if cf.PostRunDelay.isSet {
+		if cf.PostRunDelay.Duration > 0 {
+			cfg.PostRunDelay = cf.PostRunDelay.Duration
 		} else {
-			logger.Error("cooldownWindow must be positive, using default", "value", cf.CooldownWindow.Duration)
+			cfg.PostRunDelay = 0
 		}
 	}
 
@@ -190,7 +193,7 @@ func LoadFromFile(path string, logger *slog.Logger) Config {
 		Verification: cf.Agent.Verification,
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 func parseSkills(entries []skillsEntry, step string, logger *slog.Logger) []agenticv1alpha1.SkillsSource {
