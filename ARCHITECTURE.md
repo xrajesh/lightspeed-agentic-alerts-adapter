@@ -94,13 +94,13 @@ every <pollInterval> (default 30s):
     3. For each firing alert:
         a. Receivers not in allowedReceivers?               → skip (not routed to allowed receiver)
         b. Severity is "none" or "info"?                    → skip (low severity)
-        c. now - alert.startsAt < initialDelay?             → skip (too transient)
+        c. now - alert.startsAt < preRunDelay?              → skip (too transient)
         d. Active AgenticRun with same stable fingerprint?    → skip (already handling)
-        e. Terminal AgenticRun within cooldownWindow?       → skip (too soon to retry)
+        e. Terminal AgenticRun within postRunDelay?          → skip (too soon to retry)
         f. Else → CREATE AgenticRun
 ```
 
-**Poll interval**: 30 seconds by default, configurable via ConfigMap. The poll interval is fixed for the lifetime of the process; changes require a pod restart (triggered by the operator). The initial delay dominates response latency, so the poll interval doesn't need to be aggressive.
+**Poll interval**: 30 seconds by default, configurable via ConfigMap. The poll interval is fixed for the lifetime of the process; changes require a pod restart (triggered by the operator). The pre-run delay (when configured) dominates response latency, so the poll interval doesn't need to be aggressive.
 
 The query parameters ensure the adapter only processes alerts that are actively firing and not suppressed by AlertManager's silencing or inhibition rules.
 
@@ -110,8 +110,8 @@ Two configurable parameters control deduplication. Both are configurable via the
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `InitialDelay` | Minimum time an alert must be firing before the adapter creates an AgenticRun. Filters transient alerts that resolve on their own. Uses the alert's `startsAt` field from AlertManager — no in-memory tracking needed. | 5 minutes |
-| `CooldownWindow` | After an AgenticRun reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new AgenticRun for the same alert (matched by fingerprint label). Prevents flooding for flapping alerts. Uses the terminal AgenticRun's condition timestamps. | 1 hour |
+| `PreRunDelay` | Minimum time an alert must be firing before the adapter creates an AgenticRun. Filters transient alerts that resolve on their own. Uses the alert's `startsAt` field from AlertManager — no in-memory tracking needed. | 0 |
+| `PostRunDelay` | After an AgenticRun reaches a terminal phase (Completed, Failed, Escalated, Denied), minimum time before the adapter creates a new AgenticRun for the same alert (matched by fingerprint label). Avoids repeated analysis of an alert that has already been investigated. Uses the terminal AgenticRun's condition timestamps. | 1 hour |
 
 ### Race Condition Prevention
 
@@ -240,7 +240,7 @@ The adapter uses Go's standard library `log/slog` package with JSON output. Log 
 |-------|-----------------|
 | `Info` | Poll cycle start/end, AgenticRun created (with alert name and namespace), adapter startup/shutdown |
 | `Error` | AlertManager unreachable, Kubernetes API errors, AgenticRun creation failures (non-409) |
-| `Debug` | Alerts skipped due to initial delay, existing AgenticRun, or cooldown window (including the skip reason and alert fingerprint) |
+| `Debug` | Alerts skipped due to pre-run delay, existing AgenticRun, or post-run delay (including the skip reason and alert fingerprint) |
 
 ### Error Handling
 
@@ -364,8 +364,8 @@ The `alerts-adapter-config` ConfigMap is mounted as a volume at `/etc/alerts-ada
 | Field | Default | Description |
 |-------|---------|-------------|
 | `pollInterval` | `30s` | How often to poll AlertManager |
-| `initialDelay` | `5m` | Alert must fire this long before creating an AgenticRun |
-| `cooldownWindow` | `1h` | Minimum time after a terminal AgenticRun before re-proposing for the same alert |
+| `preRunDelay` | `0s` | Alert must fire this long before creating an AgenticRun |
+| `postRunDelay` | `1h` | Minimum time after a terminal AgenticRun before re-proposing for the same alert |
 | `filtering.allowedReceivers` | `[]` | Receiver allowlist — only alerts routed to at least one of these receivers are processed (case-insensitive). Empty by default; no AgenticRuns are created until receivers are explicitly configured |
 | `deduplication.ignoredLabels` | `[pod, instance, endpoint, uid]` | Labels stripped before computing the stable fingerprint for dedup matching. When set, fully replaces the defaults. Set to `[]` to include all labels |
 
@@ -382,7 +382,7 @@ Tools/skills configuration is also supported — see [README.md](README.md#confi
 
 - **AlertManager-aware filtering**: Leverage AlertManager's grouping features to reduce noise. The adapter already filters out silenced and inhibited alerts via query parameters, but does not use grouping metadata. Future iterations could create a single AgenticRun per alert group instead of per individual alert.
 - **Custom fingerprinting and alert grouping**: Consider replacing AlertManager's fingerprint (hash of all labels) with a custom fingerprint computed from a chosen subset of labels. This could potentially enable custom alert grouping to handle alert storms — e.g., multiple related alerts might map to a single AgenticRun instead of creating one per alert. A custom fingerprint would also decouple the adapter from AlertManager's fingerprint format, making it easier to switch to other alert sources (e.g., Thanos Ruler) in the future. To be evaluated based on real-world usage patterns.
-- **Per-alert-group configuration**: Allow a configuration resource (ConfigMap or CRD) to define customized settings per alert group — including initial delay, cooldown window, workflow pattern (full remediation / advisory / assisted), and prompt template. This would enable different handling strategies for different classes of alerts (e.g., shorter delay for critical infrastructure alerts, advisory-only for capacity warnings).
+- **Per-alert-group configuration**: Allow a configuration resource (ConfigMap or CRD) to define customized settings per alert group — including pre-run delay, post-run delay, workflow pattern (full remediation / advisory / assisted), and prompt template. This would enable different handling strategies for different classes of alerts (e.g., shorter delay for critical infrastructure alerts, advisory-only for capacity warnings).
 - **Label-selector alert filtering**: The adapter currently filters by receiver allowlist and severity. A future iteration could add configurable label selectors for more fine-grained alert filtering.
 - **Prometheus metrics**: `alerts_adapter_polls_total`, `agenticruns_created_total`, `errors_total`, `poll_duration_seconds`.
 - **Adapter-specific analysis output schema**: Inject custom fields into `analysisOutput.schema` for alert correlation, affected services topology.

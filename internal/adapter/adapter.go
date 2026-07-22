@@ -29,8 +29,8 @@ type AgenticRunClient interface {
 }
 
 // Adapter polls AlertManager for firing alerts and creates AgenticRun CRs,
-// applying stateless deduplication (initial delay, active-run check,
-// and cooldown window) on each cycle.
+// applying stateless deduplication (pre-run delay, active-run check,
+// and post-run delay) on each cycle.
 type Adapter struct {
 	alerts   AlertSource
 	arClient AgenticRunClient
@@ -53,8 +53,8 @@ func New(alerts AlertSource, arClient AgenticRunClient, cfg config.Config, logge
 func (a *Adapter) Run(ctx context.Context) error {
 	a.logger.Info("adapter started",
 		"pollInterval", a.cfg.PollInterval.String(),
-		"initialDelay", a.cfg.InitialDelay.String(),
-		"cooldownWindow", a.cfg.CooldownWindow.String(),
+		"preRunDelay", a.cfg.PreRunDelay.String(),
+		"postRunDelay", a.cfg.PostRunDelay.String(),
 		"allowedReceivers", a.cfg.AllowedReceivers,
 	)
 
@@ -125,12 +125,12 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if skipInitialDelay(alert, now, a.cfg.InitialDelay) {
-			a.logger.Debug("alert skipped: initial delay",
+		if a.cfg.PreRunDelay > 0 && tooEarly(alert, now, a.cfg.PreRunDelay) {
+			a.logger.Debug("alert skipped: pre-run delay",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
 				"startsAt", alert.StartsAt,
-				"threshold", a.cfg.InitialDelay,
+				"preRunDelay", a.cfg.PreRunDelay,
 			)
 			skipped++
 			continue
@@ -147,11 +147,11 @@ func (a *Adapter) reconcile(ctx context.Context) {
 			continue
 		}
 
-		if inCooldown(stableFP, runs, now, a.cfg.CooldownWindow) {
-			a.logger.Debug("alert skipped: cooldown window",
+		if a.cfg.PostRunDelay > 0 && tooRecent(stableFP, runs, now, a.cfg.PostRunDelay) {
+			a.logger.Debug("alert skipped: post-run delay",
 				"alertname", alertName,
 				"fingerprint", fingerprint,
-				"cooldown", a.cfg.CooldownWindow,
+				"postRunDelay", a.cfg.PostRunDelay,
 			)
 			skipped++
 			continue
@@ -223,7 +223,7 @@ func skipSeverity(alert *models.GettableAlert) bool {
 	return sev == "none" || sev == "info"
 }
 
-func skipInitialDelay(alert *models.GettableAlert, now time.Time, threshold time.Duration) bool {
+func tooEarly(alert *models.GettableAlert, now time.Time, threshold time.Duration) bool {
 	if alert.StartsAt == nil {
 		return true
 	}
@@ -243,7 +243,7 @@ func hasActiveRun(stableFingerprint string, runs []agenticv1alpha1.AgenticRun) b
 	return false
 }
 
-func inCooldown(stableFingerprint string, runs []agenticv1alpha1.AgenticRun, now time.Time, window time.Duration) bool {
+func tooRecent(stableFingerprint string, runs []agenticv1alpha1.AgenticRun, now time.Time, window time.Duration) bool {
 	for i := range runs {
 		if runs[i].Labels["agentic.openshift.io/alert-fingerprint"] != stableFingerprint {
 			continue

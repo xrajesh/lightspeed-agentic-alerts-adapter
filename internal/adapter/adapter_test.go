@@ -60,8 +60,8 @@ func ptr[T any](v T) *T { return &v }
 func defaultTestConfig() config.Config {
 	return config.Config{
 		PollInterval:     config.DefaultPollInterval,
-		InitialDelay:     config.DefaultInitialDelay,
-		CooldownWindow:   config.DefaultCooldownWindow,
+		PreRunDelay:      5 * time.Minute,
+		PostRunDelay:     1 * time.Hour,
 		AllowedReceivers: []string{"critical"},
 		IgnoredLabels:    config.DefaultIgnoredLabels,
 	}
@@ -112,8 +112,8 @@ func TestReconcile(t *testing.T) {
 	now := time.Now()
 	oldEnough := now.Add(-10 * time.Minute)
 	tooRecent := now.Add(-2 * time.Minute)
-	withinCooldown := now.Add(-30 * time.Minute)
-	pastCooldown := now.Add(-2 * time.Hour)
+	withinPostDelay := now.Add(-30 * time.Minute)
+	pastPostDelay := now.Add(-2 * time.Hour)
 
 	highCPUFP := stableFP(models.LabelSet{"alertname": "HighCPU", "severity": "warning"})
 
@@ -135,7 +135,7 @@ func TestReconcile(t *testing.T) {
 			wantCreateCalls: 1,
 		},
 		{
-			name:        "transient alert skipped (initial delay)",
+			name:        "transient alert skipped (pre-run delay)",
 			alerts:      models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", tooRecent)},
 			wantCreated: 0,
 		},
@@ -150,7 +150,7 @@ func TestReconcile(t *testing.T) {
 			wantCreated: 0,
 		},
 		{
-			name:   "terminal run within cooldown skipped",
+			name:   "terminal run within post-run delay skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
 				makeRun(highCPUFP, []metav1.Condition{
@@ -159,14 +159,14 @@ func TestReconcile(t *testing.T) {
 					{
 						Type:               "Verified",
 						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.NewTime(withinCooldown),
+						LastTransitionTime: metav1.NewTime(withinPostDelay),
 					},
 				}),
 			},
 			wantCreated: 0,
 		},
 		{
-			name:   "terminal run past cooldown creates new run",
+			name:   "terminal run past post-run delay creates new run",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
 				makeRun(highCPUFP, []metav1.Condition{
@@ -175,7 +175,7 @@ func TestReconcile(t *testing.T) {
 					{
 						Type:               "Verified",
 						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.NewTime(pastCooldown),
+						LastTransitionTime: metav1.NewTime(pastPostDelay),
 					},
 				}),
 			},
@@ -183,42 +183,42 @@ func TestReconcile(t *testing.T) {
 			wantCreateCalls: 1,
 		},
 		{
-			name:   "failed run within cooldown skipped",
+			name:   "failed run within post-run delay skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
 				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Analyzed",
 						Status:             metav1.ConditionFalse,
-						LastTransitionTime: metav1.NewTime(withinCooldown),
+						LastTransitionTime: metav1.NewTime(withinPostDelay),
 					},
 				}),
 			},
 			wantCreated: 0,
 		},
 		{
-			name:   "denied run within cooldown skipped",
+			name:   "denied run within post-run delay skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
 				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Denied",
 						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.NewTime(withinCooldown),
+						LastTransitionTime: metav1.NewTime(withinPostDelay),
 					},
 				}),
 			},
 			wantCreated: 0,
 		},
 		{
-			name:   "escalated run within cooldown skipped",
+			name:   "escalated run within post-run delay skipped",
 			alerts: models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", oldEnough)},
 			runs: []agenticv1alpha1.AgenticRun{
 				makeRun(highCPUFP, []metav1.Condition{
 					{
 						Type:               "Escalated",
 						Status:             metav1.ConditionTrue,
-						LastTransitionTime: metav1.NewTime(withinCooldown),
+						LastTransitionTime: metav1.NewTime(withinPostDelay),
 					},
 				}),
 			},
@@ -549,6 +549,60 @@ func TestReconcileWithTools(t *testing.T) {
 			t.Errorf("expected zero verification.tools, got %+v", p.Spec.Verification.Tools)
 		}
 	})
+}
+
+func TestReconcileZeroDelays(t *testing.T) {
+	now := time.Now()
+	justStarted := now.Add(-1 * time.Second)
+	recentTerminal := now.Add(-1 * time.Minute)
+
+	highCPUFP := stableFP(models.LabelSet{"alertname": "HighCPU", "severity": "warning"})
+
+	tests := []struct {
+		name         string
+		preRunDelay  time.Duration
+		postRunDelay time.Duration
+		alerts       models.GettableAlerts
+		runs         []agenticv1alpha1.AgenticRun
+	}{
+		{
+			name:         "zero preRunDelay skips the delay check",
+			preRunDelay:  0,
+			postRunDelay: 1 * time.Hour,
+			alerts:       models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", justStarted)},
+		},
+		{
+			name:         "zero postRunDelay skips the delay check",
+			preRunDelay:  5 * time.Minute,
+			postRunDelay: 0,
+			alerts:       models.GettableAlerts{makeAlert("HighCPU", "abcdef1234567890", now.Add(-10*time.Minute))},
+			runs: []agenticv1alpha1.AgenticRun{
+				makeRun(highCPUFP, []metav1.Condition{
+					{Type: "Analyzed", Status: metav1.ConditionTrue},
+					{Type: "Executed", Status: metav1.ConditionTrue},
+					{Type: "Verified", Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(recentTerminal)},
+				}),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			as := &fakeAlertSource{alerts: tt.alerts}
+			rc := &fakeRunClient{runs: tt.runs}
+
+			cfg := defaultTestConfig()
+			cfg.PreRunDelay = tt.preRunDelay
+			cfg.PostRunDelay = tt.postRunDelay
+
+			a := &Adapter{alerts: as, arClient: rc, cfg: cfg, logger: quietLogger()}
+			a.reconcile(context.Background())
+
+			if rc.createCalls != 1 {
+				t.Errorf("CreateAgenticRun called %d times, want 1 (zero delay should not skip)", rc.createCalls)
+			}
+		})
+	}
 }
 
 func TestReconcileDedupsWithinSameCycle(t *testing.T) {

@@ -27,46 +27,46 @@ func writeConfigFile(t *testing.T, content string) string {
 
 func TestLoadFromFile(t *testing.T) {
 	tests := []struct {
-		name               string
-		yaml               string
-		wantPollInterval   time.Duration
-		wantInitialDelay   time.Duration
-		wantCooldownWindow time.Duration
+		name             string
+		yaml             string
+		wantPollInterval time.Duration
+		wantPreRunDelay  time.Duration
+		wantPostRunDelay time.Duration
 	}{
 		{
-			name:               "valid full config",
-			yaml:               "pollInterval: 45s\ninitialDelay: 10m\ncooldownWindow: 30m\n",
-			wantPollInterval:   45 * time.Second,
-			wantInitialDelay:   10 * time.Minute,
-			wantCooldownWindow: 30 * time.Minute,
+			name:             "valid full config",
+			yaml:             "pollInterval: 45s\npreRunDelay: 10m\npostRunDelay: 30m\n",
+			wantPollInterval: 45 * time.Second,
+			wantPreRunDelay:  10 * time.Minute,
+			wantPostRunDelay: 30 * time.Minute,
 		},
 		{
-			name:               "partial config - only poll interval",
-			yaml:               "pollInterval: 1m\n",
-			wantPollInterval:   time.Minute,
-			wantInitialDelay:   DefaultInitialDelay,
-			wantCooldownWindow: DefaultCooldownWindow,
+			name:             "partial config - only poll interval",
+			yaml:             "pollInterval: 1m\n",
+			wantPollInterval: time.Minute,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: DefaultPostRunDelay,
 		},
 		{
-			name:               "partial config - only cooldown window",
-			yaml:               "cooldownWindow: 2h\n",
-			wantPollInterval:   DefaultPollInterval,
-			wantInitialDelay:   DefaultInitialDelay,
-			wantCooldownWindow: 2 * time.Hour,
+			name:             "partial config - only postRunDelay",
+			yaml:             "postRunDelay: 2h\n",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: 2 * time.Hour,
 		},
 		{
-			name:               "empty yaml",
-			yaml:               "",
-			wantPollInterval:   DefaultPollInterval,
-			wantInitialDelay:   DefaultInitialDelay,
-			wantCooldownWindow: DefaultCooldownWindow,
+			name:             "empty yaml",
+			yaml:             "",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: DefaultPostRunDelay,
 		},
 		{
-			name:               "empty document",
-			yaml:               "---\n",
-			wantPollInterval:   DefaultPollInterval,
-			wantInitialDelay:   DefaultInitialDelay,
-			wantCooldownWindow: DefaultCooldownWindow,
+			name:             "empty document",
+			yaml:             "---\n",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: DefaultPostRunDelay,
 		},
 	}
 
@@ -74,16 +74,19 @@ func TestLoadFromFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			if cfg.PollInterval != tt.wantPollInterval {
 				t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, tt.wantPollInterval)
 			}
-			if cfg.InitialDelay != tt.wantInitialDelay {
-				t.Errorf("InitialDelay = %v, want %v", cfg.InitialDelay, tt.wantInitialDelay)
+			if cfg.PreRunDelay != tt.wantPreRunDelay {
+				t.Errorf("PreRunDelay = %v, want %v", cfg.PreRunDelay, tt.wantPreRunDelay)
 			}
-			if cfg.CooldownWindow != tt.wantCooldownWindow {
-				t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, tt.wantCooldownWindow)
+			if cfg.PostRunDelay != tt.wantPostRunDelay {
+				t.Errorf("PostRunDelay = %v, want %v", cfg.PostRunDelay, tt.wantPostRunDelay)
 			}
 		})
 	}
@@ -96,45 +99,69 @@ func TestLoadFromFileInvalid(t *testing.T) {
 	}{
 		{
 			name: "invalid yaml",
-			yaml: ":::not yaml:::",
+			yaml: "key: [unclosed bracket",
 		},
 		{
 			name: "invalid duration value",
 			yaml: "pollInterval: not-a-duration\n",
 		},
+		{
+			name: "invalid preRunDelay",
+			yaml: "preRunDelay: abc\n",
+		},
+		{
+			name: "invalid postRunDelay",
+			yaml: "postRunDelay: xyz\n",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
-
-			assertDefaults(t, cfg)
+			_, err := LoadFromFile(path, quietLogger())
+			if err == nil {
+				t.Fatal("LoadFromFile() expected error, got nil")
+			}
 		})
 	}
 }
 
-func TestNonPositiveDurationsFallBackToDefaults(t *testing.T) {
+func TestNonPositiveDurationsClampToZero(t *testing.T) {
 	tests := []struct {
-		name string
-		yaml string
+		name             string
+		yaml             string
+		wantPollInterval time.Duration
+		wantPreRunDelay  time.Duration
+		wantPostRunDelay time.Duration
 	}{
 		{
-			name: "zero poll interval",
-			yaml: "pollInterval: 0s",
+			name:             "zero poll interval falls back to default",
+			yaml:             "pollInterval: 0s",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: DefaultPostRunDelay,
 		},
 		{
-			name: "negative initial delay",
-			yaml: "initialDelay: -5m",
+			name:             "negative preRunDelay clamped to 0",
+			yaml:             "preRunDelay: -5m",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  0,
+			wantPostRunDelay: DefaultPostRunDelay,
 		},
 		{
-			name: "negative cooldown window",
-			yaml: "cooldownWindow: -1h",
+			name:             "negative postRunDelay clamped to 0",
+			yaml:             "postRunDelay: -1h",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  DefaultPreRunDelay,
+			wantPostRunDelay: 0,
 		},
 		{
-			name: "all zero",
-			yaml: "pollInterval: 0s\ninitialDelay: 0s\ncooldownWindow: 0s",
+			name:             "explicit zero preRunDelay and postRunDelay override defaults",
+			yaml:             "preRunDelay: 0s\npostRunDelay: 0s",
+			wantPollInterval: DefaultPollInterval,
+			wantPreRunDelay:  0,
+			wantPostRunDelay: 0,
 		},
 	}
 
@@ -142,15 +169,29 @@ func TestNonPositiveDurationsFallBackToDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
-			assertDefaults(t, cfg)
+			if cfg.PollInterval != tt.wantPollInterval {
+				t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, tt.wantPollInterval)
+			}
+			if cfg.PreRunDelay != tt.wantPreRunDelay {
+				t.Errorf("PreRunDelay = %v, want %v", cfg.PreRunDelay, tt.wantPreRunDelay)
+			}
+			if cfg.PostRunDelay != tt.wantPostRunDelay {
+				t.Errorf("PostRunDelay = %v, want %v", cfg.PostRunDelay, tt.wantPostRunDelay)
+			}
 		})
 	}
 }
 
 func TestLoadFromFileMissing(t *testing.T) {
-	cfg := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
+	cfg, err := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
+	if err != nil {
+		t.Fatalf("LoadFromFile() error = %v", err)
+	}
 
 	assertDefaults(t, cfg)
 }
@@ -161,11 +202,11 @@ func assertDefaults(t *testing.T, cfg Config) {
 	if cfg.PollInterval != defaults.PollInterval {
 		t.Errorf("PollInterval = %v, want %v", cfg.PollInterval, defaults.PollInterval)
 	}
-	if cfg.InitialDelay != defaults.InitialDelay {
-		t.Errorf("InitialDelay = %v, want %v", cfg.InitialDelay, defaults.InitialDelay)
+	if cfg.PreRunDelay != defaults.PreRunDelay {
+		t.Errorf("PreRunDelay = %v, want %v", cfg.PreRunDelay, defaults.PreRunDelay)
 	}
-	if cfg.CooldownWindow != defaults.CooldownWindow {
-		t.Errorf("CooldownWindow = %v, want %v", cfg.CooldownWindow, defaults.CooldownWindow)
+	if cfg.PostRunDelay != defaults.PostRunDelay {
+		t.Errorf("PostRunDelay = %v, want %v", cfg.PostRunDelay, defaults.PostRunDelay)
 	}
 	assertReceiversEqual(t, cfg.AllowedReceivers, defaults.AllowedReceivers)
 	assertStringSliceEqual(t, "IgnoredLabels", cfg.IgnoredLabels, DefaultIgnoredLabels)
@@ -360,7 +401,10 @@ execution:
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			assertSkillsEqual(t, "Tools.Shared", cfg.Tools.Shared, tt.wantTools.Shared)
 			assertSkillsEqual(t, "Tools.Analysis", cfg.Tools.Analysis, tt.wantTools.Analysis)
@@ -407,7 +451,10 @@ func TestParseAllowedReceivers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			assertReceiversEqual(t, cfg.AllowedReceivers, tt.want)
 		})
@@ -441,7 +488,10 @@ func TestParseIgnoredLabels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			assertStringSliceEqual(t, "IgnoredLabels", cfg.IgnoredLabels, tt.want)
 		})
@@ -480,7 +530,10 @@ func TestParseFilteringAllowedReceivers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			assertReceiversEqual(t, cfg.AllowedReceivers, tt.want)
 		})
@@ -488,7 +541,10 @@ func TestParseFilteringAllowedReceivers(t *testing.T) {
 }
 
 func TestAllowedReceiversDefaultsOnMissingFile(t *testing.T) {
-	cfg := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
+	cfg, err := LoadFromFile("/nonexistent/path/config.yaml", quietLogger())
+	if err != nil {
+		t.Fatalf("LoadFromFile() error = %v", err)
+	}
 
 	assertReceiversEqual(t, cfg.AllowedReceivers, nil)
 }
@@ -581,7 +637,10 @@ agent:
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFile(t, tt.yaml)
 
-			cfg := LoadFromFile(path, quietLogger())
+			cfg, err := LoadFromFile(path, quietLogger())
+			if err != nil {
+				t.Fatalf("LoadFromFile() error = %v", err)
+			}
 
 			if cfg.Agent != tt.wantAgent {
 				t.Errorf("Agent = %+v, want %+v", cfg.Agent, tt.wantAgent)

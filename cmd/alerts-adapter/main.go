@@ -28,7 +28,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	cfg := config.LoadFromFile(config.DefaultConfigPath, logger)
+	cfg, err := config.LoadFromFile(config.DefaultConfigPath, logger)
+	if err != nil {
+		logger.Error("fatal error", "error", err)
+		os.Exit(1)
+	}
 
 	amClient, err := alertmanager.New(alertmanager.Config{
 		URL: os.Getenv("ALERTMANAGER_URL"),

@@ -9,16 +9,17 @@ data:
     # Default: 30s
     pollInterval: 30s
 
-    # initialDelay: how long an alert must be firing before an AgenticRun is created.
+    # preRunDelay: how long an alert must be firing before an AgenticRun is created.
     # Filters out transient alerts that resolve on their own.
-    # Default: 5m
-    initialDelay: 5m
+    # Default: 0s (no delay)
+    # preRunDelay: 5m
 
-    # cooldownWindow: after an AgenticRun reaches a terminal state (Completed, Failed,
+    # postRunDelay: after an AgenticRun reaches a terminal state (Completed, Failed,
     # Denied, Escalated), how long to wait before creating a new AgenticRun for the
-    # same alert (matched by stable fingerprint label). Prevents flooding for flapping alerts.
+    # same alert (matched by stable fingerprint label). Avoids repeated analysis of
+    # an alert that has already been investigated.
     # Default: 1h
-    cooldownWindow: 1h
+    postRunDelay: 1h
 
     # filtering: controls which alerts the adapter processes.
     filtering:

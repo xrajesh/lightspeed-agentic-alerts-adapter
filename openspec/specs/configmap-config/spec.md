@@ -15,15 +15,23 @@ The system SHALL read the `alerts-adapter-config` ConfigMap from the adapter's n
 
 #### Scenario: ConfigMap exists with invalid duration value
 - **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains an unparseable duration string for one or more fields
-- **THEN** the system falls back to the default value for each invalid field and logs a warning for each invalid field
+- **THEN** the system logs an error and returns a config load error, causing the reconcile loop to fail
 
-#### Scenario: ConfigMap exists with non-positive duration value
-- **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains a zero or negative duration (e.g., `pollInterval: 0s` or `initialDelay: -1m`)
-- **THEN** the system falls back to the default value for each non-positive field and logs a warning for each non-positive field
+#### Scenario: ConfigMap exists with explicit zero preRunDelay
+- **WHEN** the `alerts-adapter-config` ConfigMap contains `preRunDelay: 0s`
+- **THEN** the system uses `preRunDelay=0s` (same as default, no delay)
+
+#### Scenario: ConfigMap exists with explicit zero postRunDelay
+- **WHEN** the `alerts-adapter-config` ConfigMap contains `postRunDelay: 0s`
+- **THEN** the system uses `postRunDelay=0s` (overrides the 1h default, no delay)
+
+#### Scenario: ConfigMap exists with negative preRunDelay or postRunDelay
+- **WHEN** the `alerts-adapter-config` ConfigMap contains a negative duration for `preRunDelay` or `postRunDelay`
+- **THEN** the system clamps the value to `0s` (no error logged)
 
 #### Scenario: ConfigMap exists with invalid YAML
 - **WHEN** the `alerts-adapter-config` ConfigMap exists and its `config.yaml` key contains content that is not valid YAML
-- **THEN** the system falls back to all default values and logs a warning
+- **THEN** the system logs an error and returns a config load error, causing the reconcile loop to fail
 
 #### Scenario: ConfigMap exists without the config.yaml key
 - **WHEN** the `alerts-adapter-config` ConfigMap exists but does not contain a `config.yaml` key
@@ -41,15 +49,15 @@ The system SHALL NOT fail or exit when the `alerts-adapter-config` ConfigMap doe
 - **THEN** the system reverts to default values on the next reconcile cycle and logs at Info level
 
 ### Requirement: Use well-defined default values
-The system SHALL use the following default values when no ConfigMap is present or when individual fields are missing or invalid:
+The system SHALL use the following default values when no ConfigMap is present or when individual fields are missing:
 - `pollInterval`: 30 seconds
-- `initialDelay`: 5 minutes
-- `cooldownWindow`: 1 hour
+- `preRunDelay`: 0 seconds
+- `postRunDelay`: 1 hour
 - `allowedReceivers`: empty list (no alerts are processed until explicitly configured)
 
 #### Scenario: All defaults applied
 - **WHEN** no ConfigMap exists
-- **THEN** the system uses `pollInterval=30s`, `initialDelay=5m`, `cooldownWindow=1h`, `allowedReceivers=[]`
+- **THEN** the system uses `pollInterval=30s`, `preRunDelay=0s`, `postRunDelay=1h`, `allowedReceivers=[]`
 
 ### Requirement: Resolve the adapter namespace from the environment
 The system SHALL read the `POD_NAMESPACE` environment variable to determine the namespace for the ConfigMap. If the variable is not set, it SHALL fall back to `openshift-lightspeed`.
